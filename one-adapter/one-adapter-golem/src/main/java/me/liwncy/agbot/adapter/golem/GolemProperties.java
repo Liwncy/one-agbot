@@ -23,6 +23,8 @@ public class GolemProperties {
     private boolean allowOfficial;
     /** 群聊是否仅在被 @ / 点名时才回复（私聊不受影响） */
     private boolean groupRequireMention = true;
+    /** Redis 不可用时，群开关落盘路径（一行一个 accountId:groupId） */
+    private String groupGateStorePath = "./data/golem/group-disabled.txt";
 
     public boolean isEnabled() {
         return enabled;
@@ -86,5 +88,13 @@ public class GolemProperties {
 
     public void setGroupRequireMention(boolean groupRequireMention) {
         this.groupRequireMention = groupRequireMention;
+    }
+
+    public String getGroupGateStorePath() {
+        return groupGateStorePath;
+    }
+
+    public void setGroupGateStorePath(String groupGateStorePath) {
+        this.groupGateStorePath = groupGateStorePath;
     }
 }

@@ -12,6 +12,7 @@ target/
 .vscode/
 *.log
 upload/
+data/
 .flattened-pom.xml
 **/dependency-reduced-pom.xml
 .DS_Store

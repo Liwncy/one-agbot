@@ -8,12 +8,14 @@ spring:
     exclude:
       - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
       - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
-      - org.springframework.boot.data.redis.autoconfigure.RedisAutoConfiguration
-      - org.springframework.boot.data.redis.autoconfigure.RedisRepositoriesAutoConfiguration
+      # Redis 已启用（Boot 4 为 DataRedis*）；群开关 / 会话映射可持久化
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
   data:
     redis:
       host: 127.0.0.1
       port: 6379
+      # 本机 Redis 若开启 requirepass，用环境变量注入；未配置则群开关回退本地文件
+      password: ${REDIS_PASSWORD:}
 
 agbot:
   kernel:
@@ -36,6 +38,8 @@ agbot:
       allow-official: false
       # 群聊仅 @ / 点名机器人时才回复；私聊不受影响
       group-require-mention: true
+      # Redis 不可用时的群开关落盘文件
+      group-gate-store-path: ./data/golem/group-disabled.txt
 
 # 对齐 RuoYi-Vue-Plus ruoyi-admin application-dev.yml 的 snail-ai 段
 # 网关需启用 Agent Client，否则 Server 报「没有可用的客户端实例」

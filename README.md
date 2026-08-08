@@ -86,7 +86,8 @@ agbot:
    - `开机` / `启用` / `开` → 启用本群
    - `关机` / `停用` / `关` → 停用本群
    - `状态` → 查看本群是否开启  
-   开关为进程内内存，重启后默认全开。
+   群开关持久化：优先 Redis（`agbot:golem:group-disabled`）；Redis 不可用时落盘
+   `./data/golem/group-disabled.txt`（重启不丢）。
 
 ## 写新 Adapter
 
@@ -104,5 +105,5 @@ agbot:
 - `agbot.agent.*`：网关侧默认 agentId、是否异步
 - `agbot.adapter.golem.*`：Golem 网关地址、Webhook 验签、是否启用
 - `agbot.kernel.max-message-age`：过旧消息丢弃
-- 默认排除 DataSource/Redis 自动配置，便于无中间件本地起 example；生产请按需打开并配置
+- 默认排除 DataSource/MyBatis；Redis 默认开启（Boot 4：`DataRedisAutoConfiguration`）。需密码时设 `REDIS_PASSWORD`；连不上则群开关自动改用本地文件
 - 本地联调需同时启动 `one-snailai-server` 与 `one-boot`（boot 兼做 OpenAPI 调用方 + Agent 执行器）
