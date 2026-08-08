@@ -17,7 +17,8 @@ spring:
 
 agbot:
   kernel:
-    max-message-age: 60s
+    # Golem 推送偶发延迟，过短容易误丢「已点名却不回」的消息
+    max-message-age: 180s
     conversation-ttl: 30d
   agent:
     enabled: true

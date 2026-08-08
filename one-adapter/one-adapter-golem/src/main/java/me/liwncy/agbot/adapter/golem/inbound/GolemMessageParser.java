@@ -53,9 +53,10 @@ public final class GolemMessageParser {
             rawContent = item.path("push_content").asText("");
         }
         String pushContent = item.path("push_content").asText("");
+        // msg_source：XML（含 atuserlist）。不要回退到 source（那是 private/group）
         String msgSource = firstNonBlank(
-                item.path("msg_source").asText(null),
-                item.path("source").asText(null),
+                textValue(item, "msg_source"),
+                asTextOrNull(item, "msg_source"),
                 ""
         );
         String userName = parseSenderName(pushContent);
@@ -83,7 +84,11 @@ public final class GolemMessageParser {
         }
 
         boolean botMentioned = GolemMentionDetector.isBotMentioned(
-                content, msgSource, properties.getBotWechatId(), properties.getBotWechatName());
+                content,
+                pushContent,
+                msgSource,
+                properties.getBotWechatId(),
+                properties.getBotWechatName());
         if ("group".equals(source) && botMentioned) {
             content = GolemMentionDetector.stripMentionPrefix(
                     content, properties.getBotWechatId(), properties.getBotWechatName());
@@ -105,6 +110,9 @@ public final class GolemMessageParser {
         extra.put("source", source);
         extra.put("receiver", receiver == null ? "" : receiver);
         extra.put("botMentioned", botMentioned);
+        // 便于排查「看见点名却 Skip no-mention」
+        extra.put("pushContent", pushContent == null ? "" : pushContent);
+        extra.put("msgSource", msgSource == null ? "" : msgSource);
         if (item.has("new_id") || item.has("new_msg_id")) {
             extra.put("newId", firstNonBlank(asTextOrNull(item, "new_id"), asTextOrNull(item, "new_msg_id")));
         }
@@ -128,17 +136,15 @@ public final class GolemMessageParser {
     }
 
     private static String inferSource(JsonNode item) {
-        String sourceHint = firstNonBlank(
-                item.path("source").asText(null),
-                item.path("msg_source").asText(null),
-                ""
-        ).toLowerCase();
+        // source 才是 private/group/official；msg_source 是 XML（含 atuserlist），不能拿来当来源提示
+        String sourceHint = firstNonBlank(asTextOrNull(item, "source"), "").toLowerCase();
         String sender = textValue(item, "sender");
         String receiver = textValue(item, "receiver");
         if (sourceHint.contains("official")) {
             return "official";
         }
         if (sourceHint.contains("chatroom")
+                || "group".equals(sourceHint)
                 || (sender != null && sender.endsWith("@chatroom"))
                 || (receiver != null && receiver.endsWith("@chatroom"))) {
             return "group";

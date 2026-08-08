@@ -56,6 +56,8 @@ public class GolemWebhookController {
 
         List<MsgInfo> messages = GolemMessageParser.parse(accountId, rawBody, properties);
         if (messages.isEmpty()) {
+            log.info("Golem webhook no text message parsed accountId={} bodyPreview={}",
+                    accountId, preview(rawBody));
             return Map.of("success", true, "skipped", true);
         }
 
@@ -82,16 +84,29 @@ public class GolemWebhookController {
 
             if (!msg.isPrivateChat() && !groupGate.isEnabled(msg.accountId(), msg.groupId())) {
                 skippedDisabled++;
+                log.info("Skip disabled group accountId={} groupId={} msg={}",
+                        msg.accountId(), msg.groupId(), preview(msg.msg()));
                 continue;
             }
             if (!msg.isPrivateChat() && properties.isGroupRequireMention() && !isBotMentioned(msg)) {
                 skippedNoMention++;
+                log.info("Skip no-mention group accountId={} groupId={} userId={} msg={} push={} msgSource={} botMentioned={}",
+                        msg.accountId(),
+                        msg.groupId(),
+                        msg.userId(),
+                        preview(msg.msg()),
+                        preview(String.valueOf(msg.extra().getOrDefault("pushContent", ""))),
+                        preview(String.valueOf(msg.extra().getOrDefault("msgSource", ""))),
+                        msg.extra().get("botMentioned"));
                 continue;
             }
             accepted++;
+            log.info("Accept message accountId={} groupId={} userId={} msg={}",
+                    msg.accountId(), msg.groupId(), msg.userId(), preview(msg.msg()));
             runtime.receive(msg).whenComplete((reply, err) -> {
                 if (err != null) {
-                    log.error("Golem handle failed accountId={} msgId={}", accountId, msg.msgId(), err);
+                    log.error("Golem handle failed accountId={} msgId={} msg={}",
+                            accountId, msg.msgId(), preview(msg.msg()), err);
                 }
             });
         }
@@ -117,5 +132,13 @@ public class GolemWebhookController {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String preview(String msg) {
+        if (msg == null) {
+            return "";
+        }
+        String text = msg.replace('\n', ' ').trim();
+        return text.length() <= 80 ? text : text.substring(0, 80) + "...";
     }
 }

@@ -1,5 +1,6 @@
 package me.liwncy.agbot.adapter.golem.inbound;
 
+import java.text.Normalizer;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -11,21 +12,34 @@ public final class GolemMentionDetector {
     private static final Pattern AT_USER_LIST = Pattern.compile(
             "<atuserlist(?:\\s[^>]*)?>([\\s\\S]*?)</atuserlist>",
             Pattern.CASE_INSENSITIVE);
+    /** 微信 @ 后常见的窄空格等 */
+    private static final Pattern WECHAT_NOISE = Pattern.compile("[\\u2005\\u2006\\u2009\\u200A\\u200B\\uFEFF\\u00A0]+");
 
     private GolemMentionDetector() {
     }
 
-    public static boolean isBotMentioned(String content, String msgSource, String botWechatId, String botWechatName) {
+    public static boolean isBotMentioned(String content,
+                                         String pushContent,
+                                         String msgSource,
+                                         String botWechatId,
+                                         String botWechatName) {
         String botId = trim(botWechatId);
         String botName = trim(botWechatName);
         if (botId.isEmpty() && botName.isEmpty()) {
             return false;
         }
-        String text = content == null ? "" : content;
+
+        String rawPush = pushContent == null ? "" : pushContent;
+        // 微信系统预览：别人 @ 机器人时常见「xxx在群聊中@了你」，正文未必带昵称明文
+        if (rawPush.contains("在群聊中@了你") || rawPush.contains("@了你")) {
+            return true;
+        }
+
+        String text = normalizeForMatch(join(content, pushContent));
         String source = decodeXml(msgSource == null ? "" : msgSource);
 
         if (!botId.isEmpty()) {
-            if (text.contains(botId) || text.contains("@" + botId)) {
+            if (text.contains(normalizeForMatch(botId))) {
                 return true;
             }
             if (atuserListContains(source, botId)) {
@@ -33,11 +47,19 @@ public final class GolemMentionDetector {
             }
         }
         if (!botName.isEmpty()) {
-            // 与 xchatbot 一致：正文出现昵称即视为点名（含 @昵称 / ＠昵称）
-            if (text.contains(botName)
-                    || text.contains("@" + botName)
-                    || text.contains("＠" + botName)) {
-                return true;
+            String normalizedName = normalizeForMatch(botName);
+            if (!normalizedName.isEmpty()) {
+                // 正文/预览任意位置出现昵称
+                if (text.contains(normalizedName)) {
+                    return true;
+                }
+                // @ 与昵称之间可能有空格：@ 小聪明儿
+                if (Pattern.compile("@\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
+                    return true;
+                }
+                if (Pattern.compile("＠\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
+                    return true;
+                }
             }
         }
         return false;
@@ -54,14 +76,15 @@ public final class GolemMentionDetector {
         String botName = trim(botWechatName);
         String botId = trim(botWechatId);
         if (!botName.isEmpty()) {
-            // 先去开头触发词，再去掉文中残留的 @昵称 / 昵称
-            text = text.replaceFirst("(?s)^[@＠]?\\Q" + botName + "\\E[\\s,，:：-]*", "").trim();
+            text = text.replaceFirst("(?s)^[@＠]?\\s*\\Q" + botName + "\\E[\\s,，:：\\u2005\\u2006-]*", "").trim();
             text = text.replace("＠" + botName, " ").replace("@" + botName, " ");
-            text = text.replace(botName, " ").replaceAll("\\s{2,}", " ").trim();
+            text = text.replace(botName, " ");
+            text = WECHAT_NOISE.matcher(text).replaceAll(" ").replaceAll("\\s{2,}", " ").trim();
         }
         if (!botId.isEmpty()) {
-            text = text.replaceFirst("(?s)^[@＠]?\\Q" + botId + "\\E[\\s,，:：-]*", "").trim();
-            text = text.replace("@" + botId, " ").replace(botId, " ").replaceAll("\\s{2,}", " ").trim();
+            text = text.replaceFirst("(?s)^[@＠]?\\s*\\Q" + botId + "\\E[\\s,，:：\\u2005\\u2006-]*", "").trim();
+            text = text.replace("@" + botId, " ").replace(botId, " ");
+            text = WECHAT_NOISE.matcher(text).replaceAll(" ").replaceAll("\\s{2,}", " ").trim();
         }
         return text;
     }
@@ -70,19 +93,43 @@ public final class GolemMentionDetector {
         if (source.isEmpty() || botId.isEmpty()) {
             return false;
         }
-        Matcher matcher = AT_USER_LIST.matcher(source);
+        String decoded = decodeXml(source);
+        Matcher matcher = AT_USER_LIST.matcher(decoded);
         while (matcher.find()) {
             String body = matcher.group(1) == null ? "" : matcher.group(1);
-            for (String part : body.split("[\\n,;，；]+")) {
+            body = body.replace("<![CDATA[", "").replace("]]>", "");
+            for (String part : body.split("[\\n,;，；\\s]+")) {
                 String id = part.trim();
                 if (id.equalsIgnoreCase(botId)) {
                     return true;
                 }
             }
         }
-        // 有些推送把 atuserlist 展平在纯文本里
-        return source.toLowerCase(Locale.ROOT).contains(botId.toLowerCase(Locale.ROOT))
-                && source.toLowerCase(Locale.ROOT).contains("atuserlist");
+        String lower = decoded.toLowerCase(Locale.ROOT);
+        return lower.contains("atuserlist") && lower.contains(botId.toLowerCase(Locale.ROOT));
+    }
+
+    private static String normalizeForMatch(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        String text = Normalizer.normalize(value, Normalizer.Form.NFKC);
+        text = WECHAT_NOISE.matcher(text).replaceAll("");
+        return text.trim();
+    }
+
+    private static String join(String... parts) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append('\n');
+            }
+            sb.append(part);
+        }
+        return sb.toString();
     }
 
     private static String decodeXml(String value) {
