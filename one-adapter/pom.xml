@@ -13,5 +13,6 @@
     <description>平台适配器聚合（仅实现）</description>
     <modules>
         <module>one-adapter-example</module>
+        <module>one-adapter-golem</module>
     </modules>
 </project>

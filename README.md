@@ -9,7 +9,7 @@
 | `one-common-*` | BOM + core/json/web/redis/log/mybatis |
 | `one-kernel` | 消息模型、`ChatAdapter` SPI、`AdapterRuntime`、`AgentBridge` 接口 |
 | `one-agent` | SnailAI OpenAPI 桥接实现 |
-| `one-adapter/*` | 平台适配器实现（MVP：`one-adapter-example`） |
+| `one-adapter/*` | 平台适配器（`example` 联调、`golem` 微信个人号网关） |
 | `one-boot` | 网关启动 |
 | `one-extend/one-snailai-server` | SnailAI Server 独立进程 |
 
@@ -55,6 +55,39 @@ curl -X POST http://127.0.0.1:8088/adapter/example/default/message \
 
 同 `userId`/`groupId` 会复用 conversationId（默认内存映射；启用 Redis 后走 Redis）。
 
+### Golem 适配器（微信个人号网关）
+
+参照 xchatbot 的 wechat 通道，对接 [Golem](https://golem.apifox.cn)：
+
+1. 在 `application.yml` 打开并配置：
+
+```yaml
+agbot:
+  adapter:
+    golem:
+      enabled: true
+      api-base-url: http://127.0.0.1:7080
+      webhook-token: your_hmac_token   # 可空，空则不验签
+      bot-wechat-id: wxid_xxx          # 机器人 wxid（回环过滤 + 群 @ 识别）
+      bot-wechat-name: 小助手           # 群聊 @昵称 识别，建议配置
+      owner-wechat-id: wxid_owner       # 主人 wxid，可在群内启停机器人
+      group-require-mention: true      # 群聊仅 @ 才回复（默认 true）
+```
+
+2. 在 Golem 管理端把推送地址设为：
+
+`http://<你的网关>:8088/adapter/golem/default/webhook`
+
+3. 入站验签头：`x-signature` / `x-timestamp`（HMAC-SHA256(token, timestamp+body)）。  
+   出站文本：`POST {api-base-url}/api/message/text`。  
+   MVP 目前只处理文本；群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。
+
+4. 主人在群里可发（无需 @，停用后仍可开机）：
+   - `开机` / `启用` / `开` → 启用本群
+   - `关机` / `停用` / `关` → 停用本群
+   - `状态` → 查看本群是否开启  
+   开关为进程内内存，重启后默认全开。
+
 ## 写新 Adapter
 
 1. 在 `one-adapter` 下新建模块，依赖 `one-kernel`。
@@ -62,13 +95,14 @@ curl -X POST http://127.0.0.1:8088/adapter/example/default/message \
 3. 平台事件归一为 `MsgInfo` 后调用 `AdapterRuntime.receive`。
 4. 在 `one-boot` 引入该模块依赖。
 
-参考：`one-adapter/one-adapter-example`。
+参考：`one-adapter/one-adapter-example`、`one-adapter/one-adapter-golem`。
 
 ## 配置要点
 
 - `snail-ai.enabled=true`：注册 Agent Client（gRPC 执行器）；否则 Server 会报「没有可用的客户端实例」
 - `snail-ai.open-api.*`：官方 OpenAPI Client（与 RuoYi `ruoyi-admin` 同前缀）
 - `agbot.agent.*`：网关侧默认 agentId、是否异步
+- `agbot.adapter.golem.*`：Golem 网关地址、Webhook 验签、是否启用
 - `agbot.kernel.max-message-age`：过旧消息丢弃
 - 默认排除 DataSource/Redis 自动配置，便于无中间件本地起 example；生产请按需打开并配置
 - 本地联调需同时启动 `one-snailai-server` 与 `one-boot`（boot 兼做 OpenAPI 调用方 + Agent 执行器）

@@ -40,6 +40,10 @@
             <artifactId>one-adapter-example</artifactId>
         </dependency>
         <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-adapter-golem</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
