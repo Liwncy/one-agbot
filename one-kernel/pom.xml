@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>me.liwncy</groupId>
+        <artifactId>one-agbot</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <artifactId>one-kernel</artifactId>
+    <description>框架内核：消息/Adapter SPI/Runtime/Agent 门面</description>
+    <dependencies>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-log</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

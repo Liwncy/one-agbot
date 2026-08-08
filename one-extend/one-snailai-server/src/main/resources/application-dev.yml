@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 请先：CREATE DATABASE `one-agbot`; 再执行 script/sql/one_agbot_ai.sql
+    url: jdbc:mysql://localhost:3306/one-agbot?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: root123
+    hikari:
+      connection-timeout: 30000
+      validation-timeout: 5000
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 600000
+      max-lifetime: 900000
+      keepaliveTime: 30000

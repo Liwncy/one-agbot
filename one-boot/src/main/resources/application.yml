@@ -1,0 +1,52 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: one-agbot
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.RedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.RedisRepositoriesAutoConfiguration
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+agbot:
+  kernel:
+    max-message-age: 60s
+    conversation-ttl: 30d
+  agent:
+    enabled: true
+    default-agent-id: 1
+    async-handled: false
+
+# 对齐 RuoYi-Vue-Plus ruoyi-admin application-dev.yml 的 snail-ai 段
+# 网关需启用 Agent Client，否则 Server 报「没有可用的客户端实例」
+snail-ai:
+  enabled: true
+  server:
+    host: 127.0.0.1
+    port: 18888
+  app-id: "1"
+  token: SAI_566a6bfbc26e4998b4841cc927d50c5d
+  # 本进程 gRPC 端口（Server 通过此端口分发 Chat）
+  port: 3${server.port}
+  skill-temp-dir: ./data/snail-ai-agent/skills
+  shell-temp-dir: ./data/snail-ai-agent/script/
+  open-api:
+    enabled: true
+    web-port: 8900
+    https: false
+    prefix: snail-ai
+    connect-timeout-ms: 5000
+    read-timeout-ms: 60000
+    chat-timeout-ms: 300000
+
+logging:
+  level:
+    me.liwncy.agbot: INFO
+    agbot.channel: INFO

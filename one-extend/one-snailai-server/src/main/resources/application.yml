@@ -1,0 +1,69 @@
+server:
+  port: 8900
+  servlet:
+    context-path: /snail-ai
+
+spring:
+  application:
+    name: one-snailai-server
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
+  web:
+    resources:
+      static-locations: classpath:admin/
+
+snail-ai:
+  server:
+    grpc-port: 18888
+  skill:
+    upload-dir: ./upload/skills
+  crypto:
+    secret-key: ${SNAIL_AI_CRYPTO_KEY:0123456789abcdef0123456789abcdef}
+    iv: ${SNAIL_AI_CRYPTO_IV:fedcba9876543210fedcba9876543210}
+  resource:
+    storage-type: LOCAL
+    upload-dir: ./upload/resource
+    minio:
+      endpoint: http://localhost:9000
+      access-key: minioadmin
+      secret-key: minioadmin
+      bucket: snail-ai
+  rag:
+    docling:
+      enabled: ${SNAIL_AI_RAG_DOCLING_ENABLED:false}
+      url: ${SNAIL_AI_RAG_DOCLING_URL:http://127.0.0.1:5100}
+      timeout-seconds: ${SNAIL_AI_RAG_DOCLING_TIMEOUT_SECONDS:300}
+  memory:
+    short-term:
+      # memory | db —— 有库时用 db
+      store-type: db
+
+mybatis-plus:
+  typeAliasesPackage: com.aizuda.snail.ai.persistence
+  global-config:
+    db-config:
+      capital-mode: false
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.aizuda.snail: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: ALWAYS

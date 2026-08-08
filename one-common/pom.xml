@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>me.liwncy</groupId>
+        <artifactId>one-agbot</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <artifactId>one-common</artifactId>
+    <packaging>pom</packaging>
+    <description>common 通用模块</description>
+    <modules>
+        <module>one-common-bom</module>
+        <module>one-common-core</module>
+        <module>one-common-json</module>
+        <module>one-common-web</module>
+        <module>one-common-redis</module>
+        <module>one-common-log</module>
+        <module>one-common-mybatis</module>
+    </modules>
+</project>
