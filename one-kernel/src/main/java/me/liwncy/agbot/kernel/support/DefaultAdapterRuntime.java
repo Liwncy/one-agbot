@@ -63,7 +63,8 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
         }
 
         ChannelLog.inbound(msgInfo.platform(), msgInfo.accountId(),
-                "userId=" + msgInfo.userId() + " groupId=" + msgInfo.groupId()
+                "userId=" + msgInfo.userId() + " userName=" + msgInfo.userName()
+                        + " groupId=" + msgInfo.groupId()
                         + " type=" + msgInfo.msgType() + " msg=" + msgInfo.msg());
 
         return agentBridge.handle(msgInfo).thenCompose(outcome -> {

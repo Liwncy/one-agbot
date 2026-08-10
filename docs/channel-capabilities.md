@@ -38,6 +38,21 @@
 - 出站扩展一等：`remind`, `title`, `url`
 - 袋子：`extra`（见下）、`createTime` / `fromType`
 
+## 媒体传输形态（`MediaForm` / `MediaRef`）
+
+契约给适配器多种传输形式，按平台能力选用；可用工厂：`MediaRef.url/file/base64/platform`。
+
+| form | 主数据放哪 | 说明 |
+|------|------------|------|
+| `URL` | `path`（可同步 `extra.mediaUrl`） | HTTP(S) 等可拉取地址 |
+| `FILE` | `path` | 本地文件路径 |
+| `BASE64` | `extra.mediaBase64` + `mediaMime` | 二进制已在消息内 |
+| `PLATFORM` | `extra.mediaPlatformId` 或暂存 `path` | 平台原生 id（CDN/aes 等）；适配器可再升级为 URL/FILE/BASE64 |
+
+可选：`extra.mediaForm`、`mediaMime`、`mediaSize`。未显式标注时，`MediaRef.from` 会按 path/内容推断。
+
+出站媒体同样可用上述形态写入 `ReplyInfo`。
+
 ## `extra` 键约定（`ChannelExtraKeys`）
 
 | 键 | 用途 |
@@ -46,6 +61,7 @@
 | `mentionIds` | 入站被 @ 的用户列表 |
 | `quoteContent` / `quoteMsgType` | 引用原文与原类型 |
 | `thumb` / `duration` / `md5` / `format` | 媒体附属 |
+| `mediaForm` / `mediaUrl` / `mediaBase64` / `mediaPlatformId` / `mediaMime` / `mediaSize` | 媒体传输 |
 | `cardUsername` / `cardNickname` / `cardAlias` | 名片 |
 | `appType` / `forwardType` | app / forward |
 | `lat` / `lon` / `label` / `poiName` / `scale` | 位置 |
@@ -67,4 +83,11 @@
 3. 出站按 `ReplyInfo.type` 分支；不支持则打日志降级，勿删 Kernel 常量。
 4. 平台专有能力放 `bridge()`，勿塞进一等字段。
 
-参考实现：`one-adapter-example`（内存覆盖上限类型）、`one-adapter-golem`（按 OpenAPI 子集映射）。
+参考实现：`one-adapter-example`（内存覆盖上限类型）、`one-adapter-golem`（入站全类型归一 + 出站按 OpenAPI 子集映射）。
+
+## Agent 边界
+
+- 通道契约收全量 `MsgType`（含 `video`），并提供多种 `MediaForm`。
+- **适配器**选用/升级传输形态（如 PLATFORM→URL/FILE/BASE64），不要把 CDN 细节塞进 Agent。
+- **Agent** 按 `msgType` + `MediaRef` 识别；`usableForFetch()` 且为图片时：`uploadResource` → `chat/sync` 的 `attachments[{type:IMAGE}]`。  
+  需智能体绑定的 CHAT 模型开启 vision。视频 OpenAPI 暂无附件类型，仍走文本识别。

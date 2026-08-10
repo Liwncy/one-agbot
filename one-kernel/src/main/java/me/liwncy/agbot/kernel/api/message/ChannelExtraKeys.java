@@ -12,6 +12,15 @@ public final class ChannelExtraKeys {
     public static final String DURATION = "duration";
     public static final String MD5 = "md5";
     public static final String FORMAT = "format";
+
+    /** 媒体传输形态，见 {@link MediaForm} */
+    public static final String MEDIA_FORM = "mediaForm";
+    /** 与 path 等价的 URL 备份（可选） */
+    public static final String MEDIA_URL = "mediaUrl";
+    public static final String MEDIA_BASE64 = "mediaBase64";
+    public static final String MEDIA_PLATFORM_ID = "mediaPlatformId";
+    public static final String MEDIA_MIME = "mediaMime";
+    public static final String MEDIA_SIZE = "mediaSize";
     public static final String CARD_USERNAME = "cardUsername";
     public static final String CARD_NICKNAME = "cardNickname";
     public static final String CARD_ALIAS = "cardAlias";
