@@ -11,6 +11,7 @@ target/
 .settings/
 .vscode/
 *.log
+logs/
 upload/
 data/
 **/application-local.yml
