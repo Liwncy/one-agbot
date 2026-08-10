@@ -23,7 +23,12 @@ public class GolemProperties {
     private String ownerWechatId = "";
     /** 是否处理公众号/官方消息 */
     private boolean allowOfficial;
-    /** 群聊是否仅在被 @ / 点名时才回复（私聊不受影响） */
+    /**
+     * 会话默认不激活：未收到「开始/开机」等指令前不进 Agent（不自动注册用户/建会话）。
+     * 私聊本人可开；群聊仅主人可开。
+     */
+    private boolean sessionRequireActivation = true;
+    /** 群聊是否仅在被 @ / 点名时才回复（私聊不受影响）；会话激活后仍生效 */
     private boolean groupRequireMention = true;
     /**
      * 群聊点名后的连续对话窗口：同一用户在窗口内可免 @ 继续聊。
@@ -32,6 +37,16 @@ public class GolemProperties {
     private Duration groupActivationWindow = Duration.ofSeconds(60);
     /** Redis 不可用时，群开关落盘路径（一行一个 accountId:groupId） */
     private String groupGateStorePath = "./data/golem/group-disabled.txt";
+    /** 是否把 PLATFORM 媒体下载升级为 FILE/BASE64 */
+    private boolean mediaResolveEnabled = true;
+    /** 会话激活落盘（Redis 不可用时） */
+    private String sessionActiveStorePath = "./data/golem/session-active.txt";
+    /** 媒体落盘目录（prefer FILE 时） */
+    private String mediaStorePath = "./data/golem/media";
+    /** 解析后优先形态：FILE 或 BASE64 */
+    private String mediaPreferForm = "FILE";
+    /** 单文件最大字节，超出则保留 PLATFORM */
+    private long mediaMaxBytes = 20L * 1024 * 1024;
 
     public boolean isEnabled() {
         return enabled;
@@ -89,12 +104,28 @@ public class GolemProperties {
         this.allowOfficial = allowOfficial;
     }
 
+    public boolean isSessionRequireActivation() {
+        return sessionRequireActivation;
+    }
+
+    public void setSessionRequireActivation(boolean sessionRequireActivation) {
+        this.sessionRequireActivation = sessionRequireActivation;
+    }
+
     public boolean isGroupRequireMention() {
         return groupRequireMention;
     }
 
     public void setGroupRequireMention(boolean groupRequireMention) {
         this.groupRequireMention = groupRequireMention;
+    }
+
+    public String getSessionActiveStorePath() {
+        return sessionActiveStorePath;
+    }
+
+    public void setSessionActiveStorePath(String sessionActiveStorePath) {
+        this.sessionActiveStorePath = sessionActiveStorePath;
     }
 
     public String getGroupGateStorePath() {
@@ -111,5 +142,37 @@ public class GolemProperties {
 
     public void setGroupActivationWindow(Duration groupActivationWindow) {
         this.groupActivationWindow = groupActivationWindow;
+    }
+
+    public boolean isMediaResolveEnabled() {
+        return mediaResolveEnabled;
+    }
+
+    public void setMediaResolveEnabled(boolean mediaResolveEnabled) {
+        this.mediaResolveEnabled = mediaResolveEnabled;
+    }
+
+    public String getMediaStorePath() {
+        return mediaStorePath;
+    }
+
+    public void setMediaStorePath(String mediaStorePath) {
+        this.mediaStorePath = mediaStorePath;
+    }
+
+    public String getMediaPreferForm() {
+        return mediaPreferForm;
+    }
+
+    public void setMediaPreferForm(String mediaPreferForm) {
+        this.mediaPreferForm = mediaPreferForm;
+    }
+
+    public long getMediaMaxBytes() {
+        return mediaMaxBytes;
+    }
+
+    public void setMediaMaxBytes(long mediaMaxBytes) {
+        this.mediaMaxBytes = mediaMaxBytes;
     }
 }

@@ -36,7 +36,8 @@ public class GolemOwnerCommandHandler {
      * @return 已处理则返回 true（不再交给 Agent）
      */
     public boolean tryHandle(MsgInfo msg) {
-        if (msg == null || msg.isPrivateChat()) {
+        // 会话激活模式下由 GolemSessionCommandHandler 统一处理
+        if (msg == null || msg.isPrivateChat() || properties.isSessionRequireActivation()) {
             return false;
         }
         String ownerId = trim(properties.getOwnerWechatId());

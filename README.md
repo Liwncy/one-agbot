@@ -90,15 +90,16 @@ agbot:
 
 3. 入站验签头：`x-signature` / `x-timestamp`（HMAC-SHA256(token, timestamp+body)）。  
    出站文本：`POST {api-base-url}/api/message/text`。  
-   入站目前仍以文本进 Agent；出站已按通道契约映射 text/image/video/audio/emoji/link 等（见 capabilities）。群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。  
+   入站按微信 type 归一为通道 `MsgInfo`（图/视/音/链/引用等）。适配器会尝试把 PLATFORM 媒体下载升级为 `FILE`/`BASE64`（`media-resolve-enabled`，落盘 `media-store-path`）。Agent 按 `msgType` + `MediaRef` 识别。出站按契约映射（见 capabilities）。  
+   默认 `session-require-activation=true`：会话未激活时不进 Agent（不自动注册用户/建会话）。私聊本人、群聊主人发指令后才聊；未激活的消息静默忽略。群聊激活后仍需 `@机器人` / 点名（或窗口内跟聊）。  
    点名成功后，同一用户默认有 `group-activation-window`（60s）免 @ 连续对话窗口。
 
-4. 主人在群里可发（无需 @，停用后仍可开机）：
-   - `开机` / `启用` / `开` → 启用本群
-   - `关机` / `停用` / `关` → 停用本群
-   - `状态` → 查看本群是否开启  
-   群开关持久化：优先 Redis（`agbot:golem:group-disabled`）；Redis 不可用时落盘
-   `./data/golem/group-disabled.txt`（重启不丢）。
+4. 启停指令（无需 @；未激活时也能「开始」）：
+   - 私聊本人 / 群主人：`开始` / `开机` / `启用` / `开` → 激活本会话
+   - `结束` / `关机` / `停用` / `关` → 停用
+   - `状态` → 是否已开  
+   持久化：优先 Redis（`agbot:golem:session-active`）；不可用时落盘 `./data/golem/session-active.txt`。  
+   若设 `session-require-activation=false`，则退回旧的群门禁（`group-disabled` + 主人群指令），私聊直接进 Agent。
 
 ## 写新 Adapter
 
@@ -118,7 +119,7 @@ agbot:
 - `snail-ai.enabled=true`：注册 Agent Client（gRPC 执行器）；否则 Server 会报「没有可用的客户端实例」
 - `snail-ai.open-api.*`：官方 OpenAPI Client（与 RuoYi `ruoyi-admin` 同前缀）
 - `agbot.agent.*`：网关侧默认 agentId、是否异步
-- `agbot.adapter.golem.*`：Golem 网关地址、Webhook 验签、是否启用
+- `agbot.adapter.golem.*`：Golem 网关地址、Webhook 验签、会话激活（`session-require-activation`）等
 - `agbot.kernel.max-message-age`：过旧消息丢弃
-- 默认排除 DataSource/MyBatis；Redis 默认开启（Boot 4：`DataRedisAutoConfiguration`）。需密码时设 `REDIS_PASSWORD`；连不上则群开关自动改用本地文件
+- 默认排除 DataSource/MyBatis；Redis 默认开启（Boot 4：`DataRedisAutoConfiguration`）。需密码时设 `REDIS_PASSWORD`；连不上则会话激活/群开关改用本地文件
 - 本地联调需同时启动 `one-snailai-server` 与 `one-boot`（boot 兼做 OpenAPI 调用方 + Agent 执行器）

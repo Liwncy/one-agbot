@@ -11,6 +11,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -150,6 +151,67 @@ public class GolemApiClient {
     }
 
     /**
+     * GET /api/cdn/download/image?id=&amp;key= → 原始二进制。
+     */
+    public byte[] cdnDownloadImage(String id, String key) {
+        return getBinary("/api/cdn/download/image", Map.of("id", nullToEmpty(id), "key", nullToEmpty(key)));
+    }
+
+    /**
+     * GET /api/cdn/download/video?id=&amp;key= → 原始二进制。
+     */
+    public byte[] cdnDownloadVideo(String id, String key) {
+        return getBinary("/api/cdn/download/video", Map.of("id", nullToEmpty(id), "key", nullToEmpty(key)));
+    }
+
+    /**
+     * POST /api/message/download/image，从响应 chunk 取字节。
+     */
+    public byte[] downloadImageByMsg(long id, long newId, String sender, long size) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id);
+        body.put("new_id", newId);
+        body.put("sender", sender == null ? "" : sender);
+        body.put("size", size);
+        JsonNode root = postJson("/api/message/download/image", body);
+        assertOk(root, "downloadImage");
+        return extractChunkBytes(root.path("data"));
+    }
+
+    /**
+     * POST /api/message/download/video。
+     */
+    public byte[] downloadVideoByMsg(long id, long newId, long size) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id);
+        body.put("new_id", newId);
+        body.put("size", size);
+        JsonNode root = postJson("/api/message/download/video", body);
+        assertOk(root, "downloadVideo");
+        return extractChunkBytes(root.path("data"));
+    }
+
+    /**
+     * POST /api/message/download/voice。
+     */
+    public byte[] downloadVoiceByMsg(long id, long newId, long bufferId, long length, String groupId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id);
+        body.put("new_id", newId);
+        body.put("buffer_id", bufferId);
+        body.put("length", length);
+        body.put("group_id", groupId == null ? "" : groupId);
+        JsonNode root = postJson("/api/message/download/voice", body);
+        assertOk(root, "downloadVoice");
+        JsonNode data = root.path("data");
+        byte[] fromData = extractBufferBytes(data.path("data"));
+        if (fromData.length > 0) {
+            return fromData;
+        }
+        return extractChunkBytes(data);
+    }
+
+    /**
      * POST /api/message/revoke；msgId 格式 {@code newId:clientId:createTime:receiver}。
      */
     public void revoke(String packedMsgId) {
@@ -201,6 +263,62 @@ public class GolemApiClient {
             log.error("Golem API form call failed path={}", path, e);
             throw new ServiceException("Golem API failed: " + e.getMessage());
         }
+    }
+
+    private byte[] getBinary(String path, Map<String, String> query) {
+        try {
+            byte[] body = restClient.get()
+                    .uri(uriBuilder -> {
+                        var b = uriBuilder.path(path);
+                        query.forEach(b::queryParam);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(byte[].class);
+            return body == null ? new byte[0] : body;
+        } catch (Exception e) {
+            log.error("Golem binary download failed path={} query={}", path, query, e);
+            throw new ServiceException("Golem download failed: " + e.getMessage());
+        }
+    }
+
+    private static byte[] extractChunkBytes(JsonNode data) {
+        if (data == null || data.isMissingNode() || data.isNull()) {
+            return new byte[0];
+        }
+        byte[] chunk = extractBufferBytes(data.path("chunk"));
+        if (chunk.length > 0) {
+            return chunk;
+        }
+        return extractBufferBytes(data);
+    }
+
+    private static byte[] extractBufferBytes(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return new byte[0];
+        }
+        String raw = firstNonBlank(
+                text(node, "data"),
+                text(node, "buffer"),
+                text(node, "value"),
+                node.isTextual() ? node.asText(null) : null
+        );
+        if (raw == null || raw.isBlank()) {
+            return new byte[0];
+        }
+        try {
+            return Base64.getDecoder().decode(raw.replaceAll("\\s", ""));
+        } catch (Exception e) {
+            try {
+                return Base64.getUrlDecoder().decode(raw.replaceAll("\\s", ""));
+            } catch (Exception ignored) {
+                return new byte[0];
+            }
+        }
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static void assertOk(JsonNode root, String action) {

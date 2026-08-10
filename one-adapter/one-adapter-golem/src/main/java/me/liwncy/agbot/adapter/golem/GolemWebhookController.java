@@ -1,10 +1,13 @@
 package me.liwncy.agbot.adapter.golem;
 
+import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
+import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
+import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import org.slf4j.Logger;
@@ -35,18 +38,27 @@ public class GolemWebhookController {
     private final GolemProperties properties;
     private final GolemGroupGate groupGate;
     private final GolemMentionActivation mentionActivation;
+    private final GolemSessionActivation sessionActivation;
+    private final GolemSessionCommandHandler sessionCommandHandler;
     private final GolemOwnerCommandHandler ownerCommandHandler;
+    private final GolemMediaResolver mediaResolver;
 
     public GolemWebhookController(AdapterRuntime runtime,
                                   GolemProperties properties,
                                   GolemGroupGate groupGate,
                                   GolemMentionActivation mentionActivation,
-                                  GolemOwnerCommandHandler ownerCommandHandler) {
+                                  GolemSessionActivation sessionActivation,
+                                  GolemSessionCommandHandler sessionCommandHandler,
+                                  GolemOwnerCommandHandler ownerCommandHandler,
+                                  GolemMediaResolver mediaResolver) {
         this.runtime = runtime;
         this.properties = properties;
         this.groupGate = groupGate;
         this.mentionActivation = mentionActivation;
+        this.sessionActivation = sessionActivation;
+        this.sessionCommandHandler = sessionCommandHandler;
         this.ownerCommandHandler = ownerCommandHandler;
+        this.mediaResolver = mediaResolver;
     }
 
     @PostMapping("/{accountId}/webhook")
@@ -60,7 +72,7 @@ public class GolemWebhookController {
 
         List<MsgInfo> messages = GolemMessageParser.parse(accountId, rawBody, properties);
         if (messages.isEmpty()) {
-            log.info("Golem webhook no text message parsed accountId={} bodyPreview={}",
+            log.info("Golem webhook no message parsed accountId={} bodyPreview={}",
                     accountId, preview(rawBody));
             return Map.of("success", true, "skipped", true);
         }
@@ -74,24 +86,43 @@ public class GolemWebhookController {
         int accepted = 0;
         int skippedNoMention = 0;
         int skippedDisabled = 0;
+        int skippedInactive = 0;
+        int sessionCommands = 0;
         int ownerCommands = 0;
-        for (MsgInfo msg : messages) {
+        for (MsgInfo raw : messages) {
+            MsgInfo msg = mediaResolver.resolve(raw);
             if (!botId.isEmpty() && botId.equals(msg.userId())) {
                 continue;
             }
 
-            // 主人启停指令优先：群已停用时仍可「开机」
-            if (ownerCommandHandler.tryHandle(msg)) {
-                ownerCommands++;
+            // 会话启停指令优先（未激活时也能「开始」）
+            if (sessionCommandHandler.tryHandle(msg)) {
+                sessionCommands++;
                 continue;
             }
 
-            if (!msg.isPrivateChat() && !groupGate.isEnabled(msg.accountId(), msg.groupId())) {
-                skippedDisabled++;
-                log.info("Skip disabled group accountId={} groupId={} msg={}",
-                        msg.accountId(), msg.groupId(), preview(msg.msg()));
-                continue;
+            if (properties.isSessionRequireActivation()) {
+                String peerKey = GolemSessionActivation.peerKey(msg);
+                if (!sessionActivation.isActive(msg.accountId(), peerKey)) {
+                    skippedInactive++;
+                    log.debug("Skip inactive session accountId={} peerKey={} msg={}",
+                            msg.accountId(), peerKey, preview(msg.msg()));
+                    continue;
+                }
+            } else {
+                // 兼容旧模式：群门禁 + 主人群指令
+                if (ownerCommandHandler.tryHandle(msg)) {
+                    ownerCommands++;
+                    continue;
+                }
+                if (!msg.isPrivateChat() && !groupGate.isEnabled(msg.accountId(), msg.groupId())) {
+                    skippedDisabled++;
+                    log.info("Skip disabled group accountId={} groupId={} msg={}",
+                            msg.accountId(), msg.groupId(), preview(msg.msg()));
+                    continue;
+                }
             }
+
             boolean mentioned = isBotMentioned(msg);
             boolean activated = !msg.isPrivateChat()
                     && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId());
@@ -115,8 +146,9 @@ public class GolemWebhookController {
                 mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId());
             }
             accepted++;
-            log.info("Accept message accountId={} groupId={} userId={} mentioned={} activated={} msg={}",
-                    msg.accountId(), msg.groupId(), msg.userId(), mentioned, activated, preview(msg.msg()));
+            log.info("Accept message accountId={} groupId={} userId={} userName={} type={} mentioned={} activated={} msg={}",
+                    msg.accountId(), msg.groupId(), msg.userId(), msg.userName(), msg.msgType(),
+                    mentioned, activated, preview(msg.msg()));
             runtime.receive(msg).whenComplete((reply, err) -> {
                 if (err != null) {
                     log.error("Golem handle failed accountId={} msgId={} msg={}",
@@ -127,13 +159,21 @@ public class GolemWebhookController {
                 }
             });
         }
-        log.info("Golem webhook accountId={} accepted={} skippedNoMention={} skippedDisabled={} ownerCommands={}",
-                accountId, accepted, skippedNoMention, skippedDisabled, ownerCommands);
+        // 全是未激活静默跳过时不刷 info，避免关闭会话刷屏
+        if (accepted > 0 || sessionCommands > 0 || ownerCommands > 0
+                || skippedNoMention > 0 || skippedDisabled > 0) {
+            log.info("Golem webhook accountId={} accepted={} skippedNoMention={} skippedDisabled={} skippedInactive={} sessionCommands={} ownerCommands={}",
+                    accountId, accepted, skippedNoMention, skippedDisabled, skippedInactive, sessionCommands, ownerCommands);
+        } else if (skippedInactive > 0) {
+            log.debug("Golem webhook accountId={} skippedInactive={}", accountId, skippedInactive);
+        }
         return Map.of(
                 "success", true,
                 "accepted", accepted,
                 "skippedNoMention", skippedNoMention,
                 "skippedDisabled", skippedDisabled,
+                "skippedInactive", skippedInactive,
+                "sessionCommands", sessionCommands,
                 "ownerCommands", ownerCommands
         );
     }

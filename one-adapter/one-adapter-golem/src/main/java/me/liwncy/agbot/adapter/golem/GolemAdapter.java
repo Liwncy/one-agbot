@@ -27,7 +27,11 @@ public class GolemAdapter implements ChatAdapter {
     private static final Logger log = LoggerFactory.getLogger(GolemAdapter.class);
 
     private static final ChannelCapabilities CAPABILITIES = ChannelCapabilities.builder()
-            .inboundTypes(Set.of(MsgType.TEXT))
+            .inboundTypes(Set.of(
+                    MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,
+                    MsgType.FILE, MsgType.EMOJI, MsgType.LINK, MsgType.CARD,
+                    MsgType.APP, MsgType.POSITION
+            ))
             .outboundTypes(Set.of(
                     MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,
                     MsgType.EMOJI, MsgType.LINK, MsgType.CARD, MsgType.APP,

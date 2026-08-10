@@ -39,12 +39,21 @@ agbot:
       bot-wechat-name: 小聪明儿
       owner-wechat-id: wxid_5jfnhtqy74xr22
       allow-official: false
-      # 群聊仅 @ / 点名机器人时才回复；私聊不受影响
+      # 默认不进 Agent：私聊本人 / 群主人发「开始」后才响应（避免自动注册）
+      session-require-activation: true
+      # Redis 不可用时的会话激活落盘
+      session-active-store-path: ./data/golem/session-active.txt
+      # 群聊仅 @ / 点名机器人时才回复；私聊不受影响（会话激活后仍生效）
       group-require-mention: true
       # 点名后同一用户免 @ 连续聊的窗口（0 关闭）
       group-activation-window: 60s
-      # Redis 不可用时的群开关落盘文件
+      # Redis 不可用时的群开关落盘文件（session-require-activation=false 时使用）
       group-gate-store-path: ./data/golem/group-disabled.txt
+      # 入站媒体 PLATFORM → FILE/BASE64（CDN/消息下载）
+      media-resolve-enabled: true
+      media-store-path: ./data/golem/media
+      media-prefer-form: FILE
+      media-max-bytes: 20971520
 
 # 对齐 RuoYi-Vue-Plus ruoyi-admin application-dev.yml 的 snail-ai 段
 # 网关需启用 Agent Client，否则 Server 报「没有可用的客户端实例」
@@ -73,3 +82,5 @@ logging:
   level:
     me.liwncy.agbot: INFO
     agbot.channel: INFO
+    agbot.agent: INFO
+  # 落盘目录见 logback-spring.xml（默认 ./logs/one-agbot.log），可用 LOG_HOME 覆盖

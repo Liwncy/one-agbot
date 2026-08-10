@@ -1,9 +1,14 @@
 package me.liwncy.agbot.adapter.golem;
 
+import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
+import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.FileGolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
+import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.RedisGolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.RedisGolemSessionActivation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,6 +54,24 @@ public class GolemConfiguration {
             return new GolemMentionActivation(template, properties.getGroupActivationWindow());
         }
         return new GolemMentionActivation(null, properties.getGroupActivationWindow());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GolemMediaResolver.class)
+    public GolemMediaResolver golemMediaResolver(GolemApiClient apiClient, GolemProperties properties) {
+        return new GolemMediaResolver(apiClient, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GolemSessionActivation.class)
+    public GolemSessionActivation golemSessionActivation(ObjectProvider<StringRedisTemplate> redis,
+                                                         GolemProperties properties) {
+        StringRedisTemplate template = redis.getIfAvailable();
+        if (template != null && pingRedis(template)) {
+            return new RedisGolemSessionActivation(template);
+        }
+        Path storeFile = Path.of(properties.getSessionActiveStorePath()).toAbsolutePath().normalize();
+        return new FileGolemSessionActivation(storeFile);
     }
 
     private static boolean pingRedis(StringRedisTemplate template) {
