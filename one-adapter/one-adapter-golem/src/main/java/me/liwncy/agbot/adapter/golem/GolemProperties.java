@@ -2,6 +2,8 @@ package me.liwncy.agbot.adapter.golem;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 /**
  * Golem 适配器配置（对齐 xchatbot 的 WECHAT_* 环境变量语义）。
  */
@@ -23,6 +25,11 @@ public class GolemProperties {
     private boolean allowOfficial;
     /** 群聊是否仅在被 @ / 点名时才回复（私聊不受影响） */
     private boolean groupRequireMention = true;
+    /**
+     * 群聊点名后的连续对话窗口：同一用户在窗口内可免 @ 继续聊。
+     * {@code 0} 关闭（每次都必须点名）。
+     */
+    private Duration groupActivationWindow = Duration.ofSeconds(60);
     /** Redis 不可用时，群开关落盘路径（一行一个 accountId:groupId） */
     private String groupGateStorePath = "./data/golem/group-disabled.txt";
 
@@ -96,5 +103,13 @@ public class GolemProperties {
 
     public void setGroupGateStorePath(String groupGateStorePath) {
         this.groupGateStorePath = groupGateStorePath;
+    }
+
+    public Duration getGroupActivationWindow() {
+        return groupActivationWindow;
+    }
+
+    public void setGroupActivationWindow(Duration groupActivationWindow) {
+        this.groupActivationWindow = groupActivationWindow;
     }
 }

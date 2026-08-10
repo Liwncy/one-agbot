@@ -30,8 +30,10 @@ public final class GolemMentionDetector {
         }
 
         String rawPush = pushContent == null ? "" : pushContent;
+        String rawContent = content == null ? "" : content;
         // 微信系统预览：别人 @ 机器人时常见「xxx在群聊中@了你」，正文未必带昵称明文
-        if (rawPush.contains("在群聊中@了你") || rawPush.contains("@了你")) {
+        if (rawPush.contains("在群聊中@了你") || rawPush.contains("@了你")
+                || rawContent.contains("在群聊中@了你") || rawContent.contains("@了你")) {
             return true;
         }
 
@@ -45,6 +47,11 @@ public final class GolemMentionDetector {
             if (atuserListContains(source, botId)) {
                 return true;
             }
+            // 深搜拼进来的原始片段里直接出现 bot wxid + at 标记
+            if (source.toLowerCase(Locale.ROOT).contains(botId.toLowerCase(Locale.ROOT))
+                    && (source.contains("atuserlist") || source.contains("@") || source.contains("＠"))) {
+                return true;
+            }
         }
         if (!botName.isEmpty()) {
             String normalizedName = normalizeForMatch(botName);
@@ -53,11 +60,12 @@ public final class GolemMentionDetector {
                 if (text.contains(normalizedName)) {
                     return true;
                 }
-                // @ 与昵称之间可能有空格：@ 小聪明儿
-                if (Pattern.compile("@\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
+                // @ 与昵称之间可能有空格/特殊空白：@ 小聪明儿
+                if (Pattern.compile("[@＠]\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
                     return true;
                 }
-                if (Pattern.compile("＠\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
+                // 原始串未 normalize 时再扫一遍（防止特殊空白被过度剥离）
+                if (rawContent.contains(botName) || rawPush.contains(botName)) {
                     return true;
                 }
             }

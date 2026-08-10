@@ -3,6 +3,7 @@ package me.liwncy.agbot.adapter.golem;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
@@ -33,15 +34,18 @@ public class GolemWebhookController {
     private final AdapterRuntime runtime;
     private final GolemProperties properties;
     private final GolemGroupGate groupGate;
+    private final GolemMentionActivation mentionActivation;
     private final GolemOwnerCommandHandler ownerCommandHandler;
 
     public GolemWebhookController(AdapterRuntime runtime,
                                   GolemProperties properties,
                                   GolemGroupGate groupGate,
+                                  GolemMentionActivation mentionActivation,
                                   GolemOwnerCommandHandler ownerCommandHandler) {
         this.runtime = runtime;
         this.properties = properties;
         this.groupGate = groupGate;
+        this.mentionActivation = mentionActivation;
         this.ownerCommandHandler = ownerCommandHandler;
     }
 
@@ -88,7 +92,13 @@ public class GolemWebhookController {
                         msg.accountId(), msg.groupId(), preview(msg.msg()));
                 continue;
             }
-            if (!msg.isPrivateChat() && properties.isGroupRequireMention() && !isBotMentioned(msg)) {
+            boolean mentioned = isBotMentioned(msg);
+            boolean activated = !msg.isPrivateChat()
+                    && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId());
+            if (!msg.isPrivateChat()
+                    && properties.isGroupRequireMention()
+                    && !mentioned
+                    && !activated) {
                 skippedNoMention++;
                 log.info("Skip no-mention group accountId={} groupId={} userId={} msg={} push={} msgSource={} botMentioned={}",
                         msg.accountId(),
@@ -100,13 +110,20 @@ public class GolemWebhookController {
                         msg.extra().get("botMentioned"));
                 continue;
             }
+            // 点名或窗口内跟聊：刷新连续对话窗口
+            if (!msg.isPrivateChat() && (mentioned || activated)) {
+                mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId());
+            }
             accepted++;
-            log.info("Accept message accountId={} groupId={} userId={} msg={}",
-                    msg.accountId(), msg.groupId(), msg.userId(), preview(msg.msg()));
+            log.info("Accept message accountId={} groupId={} userId={} mentioned={} activated={} msg={}",
+                    msg.accountId(), msg.groupId(), msg.userId(), mentioned, activated, preview(msg.msg()));
             runtime.receive(msg).whenComplete((reply, err) -> {
                 if (err != null) {
                     log.error("Golem handle failed accountId={} msgId={} msg={}",
                             accountId, msg.msgId(), preview(msg.msg()), err);
+                } else if (reply != null) {
+                    log.info("Golem reply sent accountId={} msgId={} reply={}",
+                            accountId, msg.msgId(), preview(reply.msg()));
                 }
             });
         }

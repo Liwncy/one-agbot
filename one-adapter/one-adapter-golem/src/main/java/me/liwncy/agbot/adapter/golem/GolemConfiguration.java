@@ -2,6 +2,7 @@ package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.RedisGolemGroupGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,17 @@ public class GolemConfiguration {
         }
         Path storeFile = Path.of(properties.getGroupGateStorePath()).toAbsolutePath().normalize();
         return new FileGolemGroupGate(storeFile);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GolemMentionActivation.class)
+    public GolemMentionActivation golemMentionActivation(ObjectProvider<StringRedisTemplate> redis,
+                                                         GolemProperties properties) {
+        StringRedisTemplate template = redis.getIfAvailable();
+        if (template != null && pingRedis(template)) {
+            return new GolemMentionActivation(template, properties.getGroupActivationWindow());
+        }
+        return new GolemMentionActivation(null, properties.getGroupActivationWindow());
     }
 
     private static boolean pingRedis(StringRedisTemplate template) {

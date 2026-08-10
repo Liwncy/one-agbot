@@ -6,16 +6,22 @@ import me.liwncy.agbot.adapter.golem.GolemProperties;
 import me.liwncy.agbot.common.json.JsonUtils;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
  * 将 Golem 推送信封归一为 {@link MsgInfo}（参照 xchatbot parse-payload）。
  */
 public final class GolemMessageParser {
+    private static final Logger log = LoggerFactory.getLogger(GolemMessageParser.class);
+
     private GolemMessageParser() {
     }
 
@@ -39,24 +45,34 @@ public final class GolemMessageParser {
         int type = item.path("type").asInt(0);
         String source = inferSource(item);
         if ("official".equals(source) && !properties.isAllowOfficial()) {
+            log.debug("Skip official message accountId={}", accountId);
             return null;
         }
         // MVP：仅文本进入 Agent；其它类型先跳过
         if (type != 1) {
+            log.info("Skip non-text golem message accountId={} type={} push={}",
+                    accountId, type, preview(item.path("push_content").asText("")));
             return null;
         }
 
         String sender = textValue(item, "sender");
         String receiver = textValue(item, "receiver");
-        String rawContent = item.path("content").path("value").asText("");
+        String rawContent = firstNonBlank(
+                textValue(item, "content"),
+                item.path("content").path("value").asText(null),
+                item.path("content").path("string").asText(null),
+                item.path("content").asText(null),
+                ""
+        );
         if (rawContent.isBlank()) {
             rawContent = item.path("push_content").asText("");
         }
         String pushContent = item.path("push_content").asText("");
-        // msg_source：XML（含 atuserlist）。不要回退到 source（那是 private/group）
+        // msg_source：XML（含 atuserlist）。微信有时挂在嵌套字段，需深搜
         String msgSource = firstNonBlank(
                 textValue(item, "msg_source"),
                 asTextOrNull(item, "msg_source"),
+                collectMentionSource(item),
                 ""
         );
         String userName = parseSenderName(pushContent);
@@ -77,9 +93,13 @@ public final class GolemMessageParser {
             content = resolveTextContent(rawContent, pushContent);
         }
         if (userId == null || userId.isBlank()) {
+            log.info("Skip golem message without userId accountId={} type={} sender={} push={}",
+                    accountId, type, sender, preview(pushContent));
             return null;
         }
         if (content == null || content.isBlank()) {
+            log.info("Skip golem message blank content accountId={} type={} userId={} push={} msgSource={}",
+                    accountId, type, userId, preview(pushContent), preview(msgSource));
             return null;
         }
 
@@ -243,8 +263,13 @@ public final class GolemMessageParser {
         if (node.isTextual()) {
             return node.asText();
         }
-        String value = node.path("value").asText(null);
-        return value == null || value.isBlank() ? null : value;
+        String value = firstNonBlank(
+                node.path("value").asText(null),
+                node.path("string").asText(null),
+                node.path("String").asText(null),
+                ""
+        );
+        return value.isBlank() ? null : value;
     }
 
     private static String asTextOrNull(JsonNode item, String field) {
@@ -252,8 +277,62 @@ public final class GolemMessageParser {
         if (node == null || node.isNull() || node.isMissingNode()) {
             return null;
         }
+        if (node.isObject() || node.isArray()) {
+            return null;
+        }
         String text = node.asText(null);
         return text == null || text.isBlank() ? null : text;
+    }
+
+    /**
+     * 深搜 atuserlist / msg_source 片段，兼容字段嵌套与命名差异。
+     */
+    private static String collectMentionSource(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        collectMentionSource(node, null, sb);
+        return sb.toString();
+    }
+
+    private static void collectMentionSource(JsonNode node, String keyHint, StringBuilder out) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+        if (node.isTextual()) {
+            String text = node.asText("");
+            if (text.isBlank()) {
+                return;
+            }
+            String key = keyHint == null ? "" : keyHint.toLowerCase(Locale.ROOT);
+            boolean mentionKey = key.contains("atuser")
+                    || key.contains("at_user")
+                    || key.contains("mentioned")
+                    || key.contains("msg_source")
+                    || "remind".equals(key)
+                    || "source".equals(key);
+            if (mentionKey || text.contains("atuserlist") || text.contains("<msgsource")) {
+                if (!out.isEmpty()) {
+                    out.append('\n');
+                }
+                out.append(text);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                collectMentionSource(child, keyHint, out);
+            }
+            return;
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                collectMentionSource(entry.getValue(), entry.getKey(), out);
+            }
+        }
     }
 
     private static String firstNonBlank(String... values) {
@@ -266,6 +345,14 @@ public final class GolemMessageParser {
             }
         }
         return "";
+    }
+
+    private static String preview(String msg) {
+        if (msg == null) {
+            return "";
+        }
+        String text = msg.replace('\n', ' ').trim();
+        return text.length() <= 80 ? text : text.substring(0, 80) + "...";
     }
 
     private record GroupText(String senderId, String content) {

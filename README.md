@@ -80,7 +80,8 @@ agbot:
 
 3. 入站验签头：`x-signature` / `x-timestamp`（HMAC-SHA256(token, timestamp+body)）。  
    出站文本：`POST {api-base-url}/api/message/text`。  
-   MVP 目前只处理文本；群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。
+   MVP 目前只处理文本；群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。  
+   点名成功后，同一用户默认有 `group-activation-window`（60s）免 @ 连续对话窗口。
 
 4. 主人在群里可发（无需 @，停用后仍可开机）：
    - `开机` / `启用` / `开` → 启用本群
