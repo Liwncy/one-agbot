@@ -7,13 +7,15 @@ import me.liwncy.agbot.common.json.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Golem OpenAPI 客户端（MVP：文本发送）。
+ * Golem OpenAPI 客户端：文本/媒体/链接/表情/撤回等（按通道契约映射）。
  */
 public class GolemApiClient {
     private static final Logger log = LoggerFactory.getLogger(GolemApiClient.class);
@@ -28,18 +30,143 @@ public class GolemApiClient {
         this.restClient = RestClient.builder().baseUrl(base).build();
     }
 
-    /**
-     * POST /api/message/text
-     *
-     * @return 网关返回的消息 id（优先 new_id / id）
-     */
     public String sendText(String receiver, String content) {
+        return sendText(receiver, content, null);
+    }
+
+    public String sendText(String receiver, String content, String remind) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("receiver", receiver);
         body.put("content", content == null ? "" : content);
+        body.put("type", 1);
+        if (remind != null && !remind.isBlank()) {
+            body.put("remind", remind);
+        }
         JsonNode root = postJson("/api/message/text", body);
         assertOk(root, "sendText");
-        return extractMsgId(root.path("data"));
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendImage(String receiver, String imageUrl) {
+        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+        form.add("receiver", receiver);
+        form.add("image_url", imageUrl == null ? "" : imageUrl);
+        JsonNode root = postForm("/api/message/image", form);
+        assertOk(root, "sendImage");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendVideo(String receiver, String videoUrl, String thumbUrl, String duration) {
+        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+        form.add("receiver", receiver);
+        form.add("video_url", videoUrl == null ? "" : videoUrl);
+        form.add("thumb_url", thumbUrl == null ? "" : thumbUrl);
+        form.add("duration", duration == null || duration.isBlank() ? "10" : duration);
+        JsonNode root = postForm("/api/message/video", form);
+        assertOk(root, "sendVideo");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendVoice(String receiver, String voiceUrl, String duration, String format) {
+        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+        form.add("receiver", receiver);
+        form.add("voice_url", voiceUrl == null ? "" : voiceUrl);
+        form.add("duration", duration == null || duration.isBlank() ? "1000" : duration);
+        form.add("format", format == null || format.isBlank() ? "2" : format);
+        JsonNode root = postForm("/api/message/voice", form);
+        assertOk(root, "sendVoice");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendEmoji(String receiver, String md5, String emojiUrl) {
+        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+        form.add("receiver", receiver);
+        if (md5 != null && !md5.isBlank()) {
+            form.add("md5", md5);
+        }
+        if (emojiUrl != null && !emojiUrl.isBlank()) {
+            form.add("emoji_url", emojiUrl);
+        }
+        JsonNode root = postForm("/api/message/emoji", form);
+        assertOk(root, "sendEmoji");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendLink(String receiver, String title, String desc, String url, String thumbUrl) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("receiver", receiver);
+        body.put("title", title == null || title.isBlank() ? "链接" : title);
+        body.put("desc", desc == null ? "" : desc);
+        body.put("url", url == null ? "" : url);
+        body.put("thumb_url", thumbUrl == null ? "" : thumbUrl);
+        JsonNode root = postJson("/api/message/link", body);
+        assertOk(root, "sendLink");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendCard(String receiver, String username, String nickname, String alias) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("receiver", receiver);
+        body.put("card_username", username == null ? "" : username);
+        body.put("card_nickname", nickname == null ? "" : nickname);
+        body.put("card_alias", alias == null ? "" : alias);
+        JsonNode root = postJson("/api/message/card", body);
+        assertOk(root, "sendCard");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendApp(String receiver, int appType, String xml) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("receiver", receiver);
+        body.put("type", appType);
+        body.put("xml", xml == null ? "" : xml);
+        JsonNode root = postJson("/api/message/app", body);
+        assertOk(root, "sendApp");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendPosition(String receiver, String label, double lat, double lon,
+                               String poiName, int scale) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("receiver", receiver);
+        body.put("label", label == null ? "" : label);
+        body.put("lat", lat);
+        body.put("lon", lon);
+        body.put("poi_name", poiName == null ? "" : poiName);
+        body.put("scale", scale);
+        JsonNode root = postJson("/api/message/position", body);
+        assertOk(root, "sendPosition");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    public String sendForward(String receiver, String type, String xml) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("receiver", receiver);
+        body.put("type", type == null ? "image" : type);
+        body.put("xml", xml == null ? "" : xml);
+        JsonNode root = postJson("/api/message/forward", body);
+        assertOk(root, "sendForward");
+        return packMsgId(root.path("data"), receiver);
+    }
+
+    /**
+     * POST /api/message/revoke；msgId 格式 {@code newId:clientId:createTime:receiver}。
+     */
+    public void revoke(String packedMsgId) {
+        if (packedMsgId == null || packedMsgId.isBlank()) {
+            return;
+        }
+        String[] parts = packedMsgId.split(":", 4);
+        if (parts.length < 4) {
+            throw new ServiceException("Golem revoke needs msgId as newId:clientId:createTime:receiver");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("new_id", parseLong(parts[0]));
+        body.put("client_id", parseLong(parts[1]));
+        body.put("create_time", parseLong(parts[2]));
+        body.put("receiver", parts[3]);
+        JsonNode root = postJson("/api/message/revoke", body);
+        assertOk(root, "revoke");
     }
 
     private JsonNode postJson(String path, Object body) {
@@ -51,8 +178,27 @@ public class GolemApiClient {
                     .retrieve()
                     .body(String.class);
             return JsonUtils.mapper().readTree(json == null ? "{}" : json);
+        } catch (ServiceException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Golem API call failed path={}", path, e);
+            throw new ServiceException("Golem API failed: " + e.getMessage());
+        }
+    }
+
+    private JsonNode postForm(String path, MultiValueMap<String, Object> form) {
+        try {
+            String json = restClient.post()
+                    .uri(path)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(form)
+                    .retrieve()
+                    .body(String.class);
+            return JsonUtils.mapper().readTree(json == null ? "{}" : json);
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Golem API form call failed path={}", path, e);
             throw new ServiceException("Golem API failed: " + e.getMessage());
         }
     }
@@ -64,26 +210,30 @@ public class GolemApiClient {
         }
     }
 
-    private static String extractMsgId(JsonNode data) {
-        if (data == null || data.isMissingNode() || data.isNull()) {
+    /**
+     * 与无界 wxGolem 一致：{@code newId:clientId:createTime:receiver}，便于撤回。
+     */
+    static String packMsgId(JsonNode data, String receiver) {
+        String newId = "";
+        String clientId = "0";
+        String createTime = "0";
+        if (data != null && !data.isMissingNode() && !data.isNull()) {
+            JsonNode list = data.path("list");
+            JsonNode first = list.isArray() && !list.isEmpty() ? list.get(0) : data;
+            newId = firstNonBlank(text(first, "new_id"), text(first, "id"), "");
+            clientId = firstNonBlank(text(first, "client_id"), text(first, "id"), "0");
+            createTime = firstNonBlank(text(first, "create_time"), "0");
+        }
+        if (newId.isBlank()) {
             return "";
         }
-        JsonNode list = data.path("list");
-        if (list.isArray() && !list.isEmpty()) {
-            JsonNode first = list.get(0);
-            String id = firstNonBlank(
-                    text(first, "new_id"),
-                    text(first, "id"),
-                    text(first, "client_id")
-            );
-            if (!id.isBlank()) {
-                return id;
-            }
-        }
-        return firstNonBlank(text(data, "new_id"), text(data, "id"), "");
+        return newId + ":" + clientId + ":" + createTime + ":" + (receiver == null ? "" : receiver);
     }
 
     private static String text(JsonNode node, String field) {
+        if (node == null) {
+            return null;
+        }
         JsonNode v = node.get(field);
         return v == null || v.isNull() ? null : v.asText();
     }
@@ -95,5 +245,13 @@ public class GolemApiClient {
             }
         }
         return "";
+    }
+
+    private static long parseLong(String raw) {
+        try {
+            return Long.parseLong(raw);
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 }

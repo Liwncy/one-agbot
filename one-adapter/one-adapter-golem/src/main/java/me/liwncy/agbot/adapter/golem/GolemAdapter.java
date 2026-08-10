@@ -2,7 +2,9 @@ package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.kernel.api.adapter.AdapterContext;
+import me.liwncy.agbot.kernel.api.adapter.ChannelCapabilities;
 import me.liwncy.agbot.kernel.api.adapter.ChatAdapter;
+import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import org.slf4j.Logger;
@@ -10,16 +12,31 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Golem（微信个人号网关）适配器，platform=golem。
+ * Golem 适配器：按通道契约上限映射已支持的 OpenAPI；门禁策略不在此层定义。
  */
 @Component
 @ConditionalOnProperty(prefix = "agbot.adapter.golem", name = "enabled", havingValue = "true")
 public class GolemAdapter implements ChatAdapter {
     public static final String PLATFORM = "golem";
     private static final Logger log = LoggerFactory.getLogger(GolemAdapter.class);
+
+    private static final ChannelCapabilities CAPABILITIES = ChannelCapabilities.builder()
+            .inboundTypes(Set.of(MsgType.TEXT))
+            .outboundTypes(Set.of(
+                    MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,
+                    MsgType.EMOJI, MsgType.LINK, MsgType.CARD, MsgType.APP,
+                    MsgType.POSITION, MsgType.FORWARD
+            ))
+            .revoke(true)
+            .quote(true)
+            .remind(true)
+            .build();
 
     private final GolemApiClient apiClient;
 
@@ -39,7 +56,7 @@ public class GolemAdapter implements ChatAdapter {
 
     @Override
     public void start() {
-        log.info("Golem adapter started");
+        log.info("Golem adapter started capabilities={}", CAPABILITIES);
     }
 
     @Override
@@ -48,31 +65,151 @@ public class GolemAdapter implements ChatAdapter {
     }
 
     @Override
+    public ChannelCapabilities capabilities() {
+        return CAPABILITIES;
+    }
+
+    @Override
     public CompletableFuture<String> reply(ReplyInfo replyInfo) {
-        return CompletableFuture.supplyAsync(() -> {
-            if (replyInfo == null) {
-                return "";
+        return CompletableFuture.supplyAsync(() -> send(replyInfo));
+    }
+
+    @Override
+    public CompletableFuture<Void> delMsg(List<String> msgIds) {
+        return CompletableFuture.runAsync(() -> {
+            if (msgIds == null) {
+                return;
             }
-            String type = replyInfo.type() == null ? MsgType.TEXT : replyInfo.type();
-            if (!MsgType.TEXT.equalsIgnoreCase(type)) {
-                log.warn("Golem MVP 暂只支持文本回复，忽略 type={}", type);
-                return "";
+            for (String id : msgIds) {
+                try {
+                    apiClient.revoke(id);
+                } catch (Exception e) {
+                    log.warn("Golem revoke failed msgId={}: {}", id, e.getMessage());
+                }
             }
-            String receiver = resolveReceiver(replyInfo);
-            if (receiver == null || receiver.isBlank()) {
-                throw new IllegalStateException("Golem reply missing receiver");
-            }
-            String msgId = apiClient.sendText(receiver, replyInfo.msg());
-            log.debug("Golem text sent receiver={} msgId={}", receiver, msgId);
-            return msgId;
         });
+    }
+
+    @Override
+    public Map<String, Object> bridge() {
+        // 登录/通讯录等平台 API 后续按需挂载；消息收发优先走 ReplyInfo 类型映射
+        return Map.of("platform", PLATFORM, "messaging", "use ReplyInfo types");
+    }
+
+    private String send(ReplyInfo replyInfo) {
+        if (replyInfo == null) {
+            return "";
+        }
+        String type = MsgType.normalize(replyInfo.type());
+        if (!CAPABILITIES.supportsOutbound(type)) {
+            log.warn("Golem unsupported outbound type={}, skip", type);
+            return "";
+        }
+        String receiver = resolveReceiver(replyInfo);
+        if (receiver == null || receiver.isBlank()) {
+            throw new IllegalStateException("Golem reply missing receiver");
+        }
+        Map<String, Object> extra = replyInfo.extra() == null ? Map.of() : replyInfo.extra();
+        String path = firstNonBlank(replyInfo.path(), replyInfo.msg());
+        String msgId = switch (type) {
+            case MsgType.TEXT -> apiClient.sendText(receiver, replyInfo.msg(), replyInfo.remind());
+            case MsgType.IMAGE -> apiClient.sendImage(receiver, path);
+            case MsgType.VIDEO -> apiClient.sendVideo(
+                    receiver, path,
+                    stringExtra(extra, ChannelExtraKeys.THUMB),
+                    stringExtra(extra, ChannelExtraKeys.DURATION));
+            case MsgType.AUDIO -> apiClient.sendVoice(
+                    receiver, path,
+                    stringExtra(extra, ChannelExtraKeys.DURATION),
+                    stringExtra(extra, ChannelExtraKeys.FORMAT));
+            case MsgType.EMOJI -> apiClient.sendEmoji(
+                    receiver,
+                    stringExtra(extra, ChannelExtraKeys.MD5),
+                    firstNonBlank(replyInfo.path(), replyInfo.msg()));
+            case MsgType.LINK -> apiClient.sendLink(
+                    receiver,
+                    replyInfo.title(),
+                    replyInfo.msg(),
+                    firstNonBlank(replyInfo.url(), replyInfo.path()),
+                    stringExtra(extra, ChannelExtraKeys.THUMB));
+            case MsgType.CARD -> apiClient.sendCard(
+                    receiver,
+                    firstNonBlank(stringExtra(extra, ChannelExtraKeys.CARD_USERNAME), replyInfo.msg()),
+                    stringExtra(extra, ChannelExtraKeys.CARD_NICKNAME),
+                    stringExtra(extra, ChannelExtraKeys.CARD_ALIAS));
+            case MsgType.APP -> apiClient.sendApp(
+                    receiver,
+                    intExtra(extra, ChannelExtraKeys.APP_TYPE, 1),
+                    replyInfo.msg());
+            case MsgType.POSITION -> apiClient.sendPosition(
+                    receiver,
+                    firstNonBlank(stringExtra(extra, ChannelExtraKeys.LABEL), replyInfo.msg()),
+                    doubleExtra(extra, ChannelExtraKeys.LAT),
+                    doubleExtra(extra, ChannelExtraKeys.LON),
+                    stringExtra(extra, ChannelExtraKeys.POI_NAME),
+                    intExtra(extra, ChannelExtraKeys.SCALE, 15));
+            case MsgType.FORWARD -> apiClient.sendForward(
+                    receiver,
+                    firstNonBlank(stringExtra(extra, ChannelExtraKeys.FORWARD_TYPE), "image"),
+                    replyInfo.msg());
+            default -> {
+                log.warn("Golem no mapping for type={}", type);
+                yield "";
+            }
+        };
+        log.debug("Golem sent type={} receiver={} msgId={}", type, receiver, msgId);
+        return msgId;
     }
 
     private static String resolveReceiver(ReplyInfo replyInfo) {
         String groupId = replyInfo.groupId();
         if (groupId != null && !groupId.isBlank() && !"0".equals(groupId)) {
-            return groupId;
+            return groupId.contains("@chatroom") ? groupId : groupId + "@chatroom";
         }
         return replyInfo.userId();
+    }
+
+    private static String stringExtra(Map<String, Object> extra, String key) {
+        Object v = extra.get(key);
+        return v == null ? null : String.valueOf(v);
+    }
+
+    private static int intExtra(Map<String, Object> extra, String key, int def) {
+        Object v = extra.get(key);
+        if (v instanceof Number n) {
+            return n.intValue();
+        }
+        if (v != null) {
+            try {
+                return Integer.parseInt(String.valueOf(v));
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return def;
+    }
+
+    private static double doubleExtra(Map<String, Object> extra, String key) {
+        Object v = extra.get(key);
+        if (v instanceof Number n) {
+            return n.doubleValue();
+        }
+        if (v != null) {
+            try {
+                return Double.parseDouble(String.valueOf(v));
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return 0D;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 }

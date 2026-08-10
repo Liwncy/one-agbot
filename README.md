@@ -90,7 +90,7 @@ agbot:
 
 3. 入站验签头：`x-signature` / `x-timestamp`（HMAC-SHA256(token, timestamp+body)）。  
    出站文本：`POST {api-base-url}/api/message/text`。  
-   MVP 目前只处理文本；群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。  
+   入站目前仍以文本进 Agent；出站已按通道契约映射 text/image/video/audio/emoji/link 等（见 capabilities）。群聊在 `@机器人`、正文提及昵称、或 `atuserlist` 命中时才进 Agent，私聊仍全量回复。  
    点名成功后，同一用户默认有 `group-activation-window`（60s）免 @ 连续对话窗口。
 
 4. 主人在群里可发（无需 @，停用后仍可开机）：
@@ -102,12 +102,16 @@ agbot:
 
 ## 写新 Adapter
 
-1. 在 `one-adapter` 下新建模块，依赖 `one-kernel`。
-2. 实现 `me.liwncy.agbot.kernel.api.adapter.ChatAdapter`（`init/start/stop/reply/push/delMsg`）。
-3. 平台事件归一为 `MsgInfo` 后调用 `AdapterRuntime.receive`。
-4. 在 `one-boot` 引入该模块依赖。
+通道契约是**能力上限**（见 [docs/channel-capabilities.md](docs/channel-capabilities.md)），不是某一家平台的交集。
 
-参考：`one-adapter/one-adapter-example`、`one-adapter/one-adapter-golem`。
+1. 在 `one-adapter` 下新建模块，依赖 `one-kernel`。
+2. 对照能力表实现 `ChatAdapter`（`reply` / `push` / `delMsg` / `bridge`），并用 `capabilities()` 声明本适配器真实子集。
+3. 平台事件归一为 `MsgInfo`（含 `msgType` / `path` / `replyToMsgId`）后调用 `AdapterRuntime.receive`。
+4. 出站按 `ReplyInfo.type` 映射；不支持则降级打日志，勿删 Kernel `MsgType`。
+5. 登录/通讯录等平台专有能力放 `bridge()`；群门禁等产品策略不要塞进通道类型。
+6. 在 `one-boot` 引入该模块依赖。
+
+参考：`one-adapter-example`（内存覆盖上限类型 + `/push` `/delMsg`）、`one-adapter-golem`（按 OpenAPI 子集映射）。
 
 ## 配置要点
 

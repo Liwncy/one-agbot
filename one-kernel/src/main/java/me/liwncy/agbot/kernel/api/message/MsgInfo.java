@@ -32,9 +32,7 @@ public record MsgInfo(
         if (fromType == null || fromType.isBlank()) {
             fromType = "Social";
         }
-        if (msgType == null || msgType.isBlank()) {
-            msgType = MsgType.TEXT;
-        }
+        msgType = MsgType.normalize(msgType);
         if (extra == null) {
             extra = Collections.emptyMap();
         }

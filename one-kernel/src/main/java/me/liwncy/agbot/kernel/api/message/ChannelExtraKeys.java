@@ -1,0 +1,30 @@
+package me.liwncy.agbot.kernel.api.message;
+
+/**
+ * {@link MsgInfo#extra()} / {@link ReplyInfo#extra()} 约定键（非一等字段的扩展）。
+ */
+public final class ChannelExtraKeys {
+    public static final String PARSE_MODE = "parseMode";
+    public static final String MENTION_IDS = "mentionIds";
+    public static final String QUOTE_CONTENT = "quoteContent";
+    public static final String QUOTE_MSG_TYPE = "quoteMsgType";
+    public static final String THUMB = "thumb";
+    public static final String DURATION = "duration";
+    public static final String MD5 = "md5";
+    public static final String FORMAT = "format";
+    public static final String CARD_USERNAME = "cardUsername";
+    public static final String CARD_NICKNAME = "cardNickname";
+    public static final String CARD_ALIAS = "cardAlias";
+    public static final String APP_TYPE = "appType";
+    public static final String FORWARD_TYPE = "forwardType";
+    public static final String LAT = "lat";
+    public static final String LON = "lon";
+    public static final String LABEL = "label";
+    public static final String POI_NAME = "poiName";
+    public static final String SCALE = "scale";
+    public static final String FRIEND_ID = "friendId";
+    public static final String BOT_ID = "botId";
+
+    private ChannelExtraKeys() {
+    }
+}

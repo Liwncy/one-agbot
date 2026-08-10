@@ -11,13 +11,14 @@ import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 默认 Runtime：过期丢弃 → Agent → reply。
+ * 默认 Runtime：过期丢弃 → Agent → reply；push/delMsg 直达适配器 SPI。
  */
 public class DefaultAdapterRuntime implements AdapterRuntime {
     private static final Logger log = LoggerFactory.getLogger(DefaultAdapterRuntime.class);
@@ -34,7 +35,8 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
     @Override
     public void register(ChatAdapter adapter) {
         adapters.put(adapter.platform(), adapter);
-        log.info("Registered adapter platform={}", adapter.platform());
+        log.info("Registered adapter platform={} capabilities={}",
+                adapter.platform(), adapter.capabilities());
     }
 
     @Override
@@ -61,7 +63,8 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
         }
 
         ChannelLog.inbound(msgInfo.platform(), msgInfo.accountId(),
-                "userId=" + msgInfo.userId() + " groupId=" + msgInfo.groupId() + " msg=" + msgInfo.msg());
+                "userId=" + msgInfo.userId() + " groupId=" + msgInfo.groupId()
+                        + " type=" + msgInfo.msgType() + " msg=" + msgInfo.msg());
 
         return agentBridge.handle(msgInfo).thenCompose(outcome -> {
             if (outcome instanceof AgentOutcome.Handled handled) {
@@ -80,10 +83,30 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
 
     @Override
     public CompletableFuture<String> push(String platform, ReplyInfo replyInfo) {
+        ChatAdapter adapter = requireAdapter(platform);
+        if (replyInfo == null) {
+            return CompletableFuture.failedFuture(new ServiceException("replyInfo is null"));
+        }
+        ChannelLog.outbound(platform, replyInfo.accountId(),
+                "push type=" + replyInfo.type() + " msg=" + replyInfo.msg());
+        return adapter.push(replyInfo);
+    }
+
+    @Override
+    public CompletableFuture<Void> delMsg(String platform, List<String> msgIds) {
+        ChatAdapter adapter = requireAdapter(platform);
+        if (!adapter.capabilities().revoke()) {
+            log.warn("Adapter platform={} does not support delMsg, skip ids={}", platform, msgIds);
+            return CompletableFuture.completedFuture(null);
+        }
+        return adapter.delMsg(msgIds);
+    }
+
+    private ChatAdapter requireAdapter(String platform) {
         ChatAdapter adapter = adapters.get(platform);
         if (adapter == null) {
-            return CompletableFuture.failedFuture(new ServiceException("adapter not found: " + platform));
+            throw new ServiceException("adapter not found: " + platform);
         }
-        return adapter.reply(replyInfo);
+        return adapter;
     }
 }
