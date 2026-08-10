@@ -1,0 +1,78 @@
+package me.liwncy.agbot.adapter.golem.session;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+import java.util.Locale;
+
+/**
+ * 群聊响应模式（按群持久化，主人指令切换）。
+ */
+public enum GolemGroupRespondMode {
+    /** 要 @ / 点名（或短窗口跟聊）才回 */
+    MENTION,
+    /** 会话开启后群内全量响应（「跟别人说话」仍不接） */
+    FULL,
+    /** 限定规则：白名单用户 / 关键词（@ 仍可触发） */
+    RULE,
+    /** 按概率随机插话（「跟别人说话」仍不接） */
+    RANDOM,
+    /** 智能：暂未定细则，当前等同点名；后续再加判定 */
+    SMART;
+
+    public String label() {
+        return switch (this) {
+            case MENTION -> "点名";
+            case FULL -> "全量";
+            case RULE -> "规则";
+            case RANDOM -> "随机";
+            case SMART -> "智能";
+        };
+    }
+
+    public String tip() {
+        return switch (this) {
+            case MENTION -> "要 @ 我才回（跟聊窗口内可免 @）";
+            case FULL -> "群里说话我都接（跟别人说话时除外）";
+            case RULE -> "只听白名单或关键词（@ 我也能触发）";
+            case RANDOM -> "按概率偶尔接一句（跟别人说话时除外）";
+            case SMART -> "先按点名来，细则还没定";
+        };
+    }
+
+    @JsonValue
+    public String jsonValue() {
+        return name();
+    }
+
+    @JsonCreator
+    public static GolemGroupRespondMode fromJson(String raw) {
+        GolemGroupRespondMode mode = parse(raw);
+        return mode == null ? MENTION : mode;
+    }
+
+    public static GolemGroupRespondMode parse(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String t = raw.trim().toLowerCase(Locale.ROOT);
+        return switch (t) {
+            case "mention", "点名", "@", "要@", "部分" -> MENTION;
+            case "full", "全量", "全部", "全都回", "all" -> FULL;
+            case "rule", "规则", "限定" -> RULE;
+            case "random", "随机", "随机模式", "概率" -> RANDOM;
+            case "smart", "智能", "智能模式" -> SMART;
+            default -> {
+                try {
+                    yield GolemGroupRespondMode.valueOf(t.toUpperCase(Locale.ROOT));
+                } catch (Exception ignored) {
+                    yield null;
+                }
+            }
+        };
+    }
+
+    public static GolemGroupRespondMode defaultOf(boolean groupRequireMention) {
+        return groupRequireMention ? MENTION : FULL;
+    }
+}

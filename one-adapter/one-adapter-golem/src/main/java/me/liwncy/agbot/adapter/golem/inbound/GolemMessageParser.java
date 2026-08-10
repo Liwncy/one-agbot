@@ -27,13 +27,21 @@ public final class GolemMessageParser {
     private static final Logger log = LoggerFactory.getLogger(GolemMessageParser.class);
 
     /** 允许属性名与 =、引号之间有空格（群聊表情常见：cdnurl = "http://..."）。 */
-    private static final Pattern XML_ATTR = Pattern.compile("([\\w:]+)\\s*=\\s*\"([^\"]*)\"");
+    private static final Pattern XML_ATTR = Pattern.compile("([\\w:]+)\\s*=\\s*[\"']([^\"']*)[\"']");
+    private static final Pattern APPMSG_BLOCK = Pattern.compile("(?is)<appmsg\\b[^>]*>(.*?)</appmsg>", Pattern.DOTALL);
     private static final Pattern APPMSG_TYPE = Pattern.compile("(?is)<type>(\\d+)</type>");
     private static final Pattern APPMSG_TITLE = Pattern.compile("(?is)<title>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</title>");
+    private static final Pattern APPMSG_DES = Pattern.compile("(?is)<des>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</des>");
     private static final Pattern APPMSG_URL = Pattern.compile("(?is)<url>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</url>");
+    private static final Pattern APPMSG_THUMB = Pattern.compile("(?is)<thumburl>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</thumburl>");
+    private static final Pattern REFER_MSG_BLOCK = Pattern.compile("(?is)<refermsg>(.*?)</refermsg>", Pattern.DOTALL);
     private static final Pattern REFER_SVRID = Pattern.compile("(?is)<svrid>(\\d+)</svrid>");
-    private static final Pattern REFER_CONTENT = Pattern.compile("(?is)<content>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</content>");
-    private static final Pattern REFER_TYPE = Pattern.compile("(?is)<refermsg>.*?<type>(\\d+)</type>", Pattern.DOTALL);
+    private static final Pattern REFER_CONTENT = Pattern.compile("(?is)<content>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</content>", Pattern.DOTALL);
+    private static final Pattern REFER_TYPE = Pattern.compile("(?is)<type>(\\d+)</type>");
+    private static final Pattern REFER_FROMUSR = Pattern.compile("(?is)<fromusr>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</fromusr>");
+    private static final Pattern REFER_CHATUSR = Pattern.compile("(?is)<chatusr>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</chatusr>");
+    private static final Pattern REFER_DISPLAY = Pattern.compile("(?is)<displayname>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</displayname>");
+    private static final Pattern RECORD_TITLE = Pattern.compile("(?is)<title>(?:<!\\[CDATA\\[)?(.*?)(?:]]>)?</title>");
 
     private GolemMessageParser() {
     }
@@ -56,6 +64,11 @@ public final class GolemMessageParser {
 
     private static MsgInfo parseItem(String accountId, JsonNode item, GolemProperties properties) {
         int wechatType = item.path("type").asInt(0);
+        if (GolemWechatTypeMapper.isSystemNoise(wechatType)) {
+            log.debug("Skip system/noise wechatType={} accountId={}", wechatType, accountId);
+            return null;
+        }
+
         String source = inferSource(item);
         if ("official".equals(source) && !properties.isAllowOfficial()) {
             log.debug("Skip official message accountId={}", accountId);
@@ -99,22 +112,10 @@ public final class GolemMessageParser {
             bodyXml = rawContent;
         }
 
-        // 好友申请
-        if (wechatType == 37) {
-            if (userId.isBlank()) {
-                userId = "EventFriendVerify";
-            }
-            Map<String, Object> friendExtra = baseExtra(source, receiver, pushContent, msgSource, false, wechatType);
-            friendExtra.put("event", "friend_verify");
-            return new MsgInfo(
-                    GolemAdapter.PLATFORM, accountId, userId,
-                    firstNonBlank(xmlAttr(bodyXml, "fromnickname"), userName),
-                    "0", null, bodyXml,
-                    buildMsgId(item, receiver, userId, groupId),
-                    "Friend", MsgType.TEXT, null, null,
-                    toEpochMillis(item.path("create_time").asLong(0)),
-                    Map.copyOf(friendExtra)
-            );
+        // 好友申请（37/65）：结构化字段，勿把整段 XML 交给 Agent
+        if (GolemWechatTypeMapper.isFriendVerify(wechatType)) {
+            return mapFriendVerify(accountId, item, source, receiver, pushContent, msgSource,
+                    userId, userName, bodyXml);
         }
 
         if (userId == null || userId.isBlank()) {
@@ -150,6 +151,10 @@ public final class GolemMessageParser {
 
         Map<String, Object> extra = baseExtra(source, receiver, pushContent, msgSource, botMentioned, wechatType);
         extra.putAll(typeExtra);
+        List<String> mentionIds = GolemMentionDetector.extractMentionIds(msgSource);
+        if (!mentionIds.isEmpty()) {
+            extra.put(ChannelExtraKeys.MENTION_IDS, mentionIds);
+        }
         if (item.has("new_id") || item.has("new_msg_id")) {
             extra.put("newId", firstNonBlank(asTextOrNull(item, "new_id"), asTextOrNull(item, "new_msg_id")));
         }
@@ -179,11 +184,18 @@ public final class GolemMessageParser {
     /** 媒体入站：打印 XML 关键字段，便于核对是否为可直链的 http(s)。 */
     private static void logInboundMedia(MsgInfo msg, int wechatType, String bodyXml) {
         String type = MsgType.normalize(msg.msgType());
+        String quoteType = msg.extra() == null ? ""
+                : String.valueOf(msg.extra().getOrDefault(ChannelExtraKeys.QUOTE_MSG_TYPE, "")).trim();
+        boolean quoteMedia = MsgType.IMAGE.equals(quoteType)
+                || MsgType.VIDEO.equals(quoteType)
+                || MsgType.AUDIO.equals(quoteType)
+                || MsgType.EMOJI.equals(quoteType);
         if (!MsgType.IMAGE.equals(type)
                 && !MsgType.VIDEO.equals(type)
                 && !MsgType.AUDIO.equals(type)
                 && !MsgType.FILE.equals(type)
-                && !MsgType.EMOJI.equals(type)) {
+                && !MsgType.EMOJI.equals(type)
+                && !quoteMedia) {
             return;
         }
         MediaRef ref = MediaRef.fromMsg(msg);
@@ -215,15 +227,7 @@ public final class GolemMessageParser {
     }
 
     private static String annotateMediaForm(String msgType, String path, Map<String, Object> extra) {
-        String type = MsgType.normalize(msgType);
-        boolean mediaType = MsgType.IMAGE.equals(type)
-                || MsgType.VIDEO.equals(type)
-                || MsgType.AUDIO.equals(type)
-                || MsgType.FILE.equals(type)
-                || MsgType.EMOJI.equals(type);
-        if (!mediaType) {
-            return path;
-        }
+        // 引用消息顶层多为 TEXT，但 path/extra 可能已挂 PLATFORM/URL 媒体
         MediaRef ref = MediaRef.from(path, extra);
         if (ref == null) {
             return path;
@@ -237,9 +241,11 @@ public final class GolemMessageParser {
         Map<String, Object> extra = new HashMap<>();
 
         if (mapped == null) {
-            log.info("Unknown wechat type={}, pass as text placeholder", wechatType);
+            // 通话等未建模类型：可读占位，避免把原始 XML 丢给 Agent
+            String label = unknownTypeLabel(wechatType);
+            log.info("Unknown wechat type={}, map as text placeholder={}", wechatType, label);
             return new MappedContent(MsgType.TEXT,
-                    firstNonBlank(textBody, "[未知消息 type=" + wechatType + "]"),
+                    firstNonBlank(label, textBody, "[未知消息 type=" + wechatType + "]"),
                     null, null, extra);
         }
 
@@ -247,9 +253,10 @@ public final class GolemMessageParser {
             case MsgType.TEXT -> new MappedContent(MsgType.TEXT, textBody, null, null, extra);
             case MsgType.IMAGE -> {
                 String buffer = imageBufferHint(item);
+                // 对齐 Bncr/xchatbot：优先大图 CDN
                 String cdn = firstNonBlank(
-                        xmlAttr(bodyXml, "cdnmidimgurl"),
                         xmlAttr(bodyXml, "cdnbigimgurl"),
+                        xmlAttr(bodyXml, "cdnmidimgurl"),
                         xmlAttr(bodyXml, "cdnthumburl")
                 );
                 String aes = xmlAttr(bodyXml, "aeskey");
@@ -275,11 +282,15 @@ public final class GolemMessageParser {
             case MsgType.AUDIO -> {
                 String path = firstNonBlank(xmlAttr(bodyXml, "voiceurl"), xmlAttr(bodyXml, "voiceUrl"));
                 putIfPresent(extra, ChannelExtraKeys.DURATION,
-                        firstNonBlank(xmlAttr(bodyXml, "voicelength"), xmlAttr(bodyXml, "playlength")));
+                        firstNonBlank(xmlAttr(bodyXml, "voicelength"), xmlAttr(bodyXml, "playlength"),
+                                xmlAttr(bodyXml, "duration")));
                 putIfPresent(extra, ChannelExtraKeys.FORMAT, xmlAttr(bodyXml, "voiceformat"));
                 putIfPresent(extra, "length", firstNonBlank(xmlAttr(bodyXml, "length"),
                         xmlAttr(bodyXml, "voicelength")));
-                putIfPresent(extra, "bufferId", xmlAttr(bodyXml, "bufid"));
+                putIfPresent(extra, "bufferId", firstNonBlank(
+                        xmlAttr(bodyXml, "bufid"),
+                        xmlAttr(bodyXml, "bufferid"),
+                        xmlAttr(bodyXml, "buffer_id")));
                 putIfPresent(extra, "aeskey", xmlAttr(bodyXml, "aeskey"));
                 String resolved = blankToNull(path);
                 if (resolved != null) {
@@ -297,8 +308,14 @@ public final class GolemMessageParser {
                 putIfPresent(extra, ChannelExtraKeys.THUMB, xmlAttr(bodyXml, "cdnthumburl"));
                 putIfPresent(extra, ChannelExtraKeys.DURATION,
                         firstNonBlank(xmlAttr(bodyXml, "playlength"), xmlAttr(bodyXml, "duration")));
-                putIfPresent(extra, "aeskey", firstNonBlank(xmlAttr(bodyXml, "aeskey"),
+                putIfPresent(extra, "aeskey", firstNonBlank(
+                        xmlAttr(bodyXml, "aeskey"),
+                        xmlAttr(bodyXml, "cdnvideokey"),
+                        xmlAttr(bodyXml, "cdndatakey"),
                         xmlAttr(bodyXml, "cdnvideosaeskey")));
+                putIfPresent(extra, "thumbAeskey", firstNonBlank(
+                        xmlAttr(bodyXml, "cdnthumbkey"),
+                        xmlAttr(bodyXml, "cdnthumbaeskey")));
                 putIfPresent(extra, "length", firstNonBlank(xmlAttr(bodyXml, "length"),
                         xmlAttr(bodyXml, "playlength")));
                 String resolved = blankToNull(path);
@@ -309,12 +326,13 @@ public final class GolemMessageParser {
                         resolved, null, extra);
             }
             case MsgType.EMOJI -> {
-                String path = firstNonBlank(xmlAttr(bodyXml, "cdnurl"), xmlAttr(bodyXml, "emoji_url"));
-                String md5 = xmlAttr(bodyXml, "md5");
-                if (!md5.isBlank()) {
-                    extra.put(ChannelExtraKeys.MD5, md5);
-                }
-                putIfPresent(extra, "aeskey", xmlAttr(bodyXml, "aeskey"));
+                attachEmojiFields(bodyXml, extra);
+                String path = firstNonBlank(
+                        xmlAttr(bodyXml, "cdnurl"),
+                        xmlAttr(bodyXml, "encrypturl"),
+                        xmlAttr(bodyXml, "externurl"),
+                        xmlAttr(bodyXml, "thumburl"),
+                        xmlAttr(bodyXml, "emoji_url"));
                 String resolved = blankToNull(path);
                 if (resolved != null) {
                     resolved = mediaRefOfLocator(resolved).applyToExtra(extra);
@@ -323,19 +341,27 @@ public final class GolemMessageParser {
                         resolved, null, extra);
             }
             case MsgType.POSITION -> {
-                putIfPresent(extra, ChannelExtraKeys.LAT, xmlAttr(bodyXml, "x"));
-                putIfPresent(extra, ChannelExtraKeys.LON, xmlAttr(bodyXml, "y"));
+                putIfPresent(extra, ChannelExtraKeys.LAT, firstNonBlank(xmlAttr(bodyXml, "x"), xmlAttr(bodyXml, "latitude")));
+                putIfPresent(extra, ChannelExtraKeys.LON, firstNonBlank(xmlAttr(bodyXml, "y"), xmlAttr(bodyXml, "longitude")));
                 putIfPresent(extra, ChannelExtraKeys.LABEL, xmlAttr(bodyXml, "label"));
                 putIfPresent(extra, ChannelExtraKeys.POI_NAME, xmlAttr(bodyXml, "poiname"));
                 putIfPresent(extra, ChannelExtraKeys.SCALE, xmlAttr(bodyXml, "scale"));
+                putIfPresent(extra, ChannelExtraKeys.THUMB, firstNonBlank(
+                        xmlAttr(bodyXml, "mapthumburl"), xmlAttr(bodyXml, "thumburl")));
                 yield new MappedContent(MsgType.POSITION,
                         firstNonBlank(xmlAttr(bodyXml, "poiname"), xmlAttr(bodyXml, "label"), "[位置]"),
                         null, null, extra);
             }
             case MsgType.CARD -> {
-                putIfPresent(extra, ChannelExtraKeys.CARD_USERNAME, xmlAttr(bodyXml, "username"));
+                putIfPresent(extra, ChannelExtraKeys.CARD_USERNAME, firstNonBlank(
+                        xmlAttr(bodyXml, "username"), xmlAttr(bodyXml, "fromusername")));
                 putIfPresent(extra, ChannelExtraKeys.CARD_NICKNAME, xmlAttr(bodyXml, "nickname"));
                 putIfPresent(extra, ChannelExtraKeys.CARD_ALIAS, xmlAttr(bodyXml, "alias"));
+                putIfPresent(extra, ChannelExtraKeys.THUMB, firstNonBlank(
+                        xmlAttr(bodyXml, "bigheadimgurl"), xmlAttr(bodyXml, "smallheadimgurl")));
+                putIfPresent(extra, "province", xmlAttr(bodyXml, "province"));
+                putIfPresent(extra, "city", xmlAttr(bodyXml, "city"));
+                putIfPresent(extra, "sex", xmlAttr(bodyXml, "sex"));
                 yield new MappedContent(MsgType.CARD,
                         firstNonBlank(xmlAttr(bodyXml, "nickname"), xmlAttr(bodyXml, "username"), "[名片]"),
                         null, null, extra);
@@ -347,36 +373,370 @@ public final class GolemMessageParser {
     }
 
     /**
-     * type=49 appmsg：引用(57)→text+quote；链接(5)→link；文件(6)→file；其余保留 app。
+     * type=49 appmsg：引用(57) / 链接(5,33,36) / 文件(6) / 转发(19) / 转账红包等。
      */
     private static MappedContent mapAppMsg(String bodyXml, String pushContent, Map<String, Object> extra) {
-        String appType = matchGroup(APPMSG_TYPE, bodyXml);
+        String appXml = firstNonBlank(matchGroup(APPMSG_BLOCK, bodyXml), bodyXml);
+        String appType = matchGroup(APPMSG_TYPE, appXml);
         putIfPresent(extra, ChannelExtraKeys.APP_TYPE, appType);
-        String title = decodeXml(matchGroup(APPMSG_TITLE, bodyXml));
-        String url = decodeXml(matchGroup(APPMSG_URL, bodyXml));
+        String title = decodeXml(matchGroup(APPMSG_TITLE, appXml));
+        String des = decodeXml(matchGroup(APPMSG_DES, appXml));
+        String url = decodeXml(matchGroup(APPMSG_URL, appXml));
+        String thumb = decodeXml(matchGroup(APPMSG_THUMB, appXml));
+        putIfPresent(extra, ChannelExtraKeys.DESC, des);
+        putIfPresent(extra, ChannelExtraKeys.THUMB, firstNonBlank(thumb, xmlAttr(appXml, "cdnthumburl")));
 
         if ("57".equals(appType)) {
-            String referType = matchGroup(REFER_TYPE, bodyXml);
-            String referContent = decodeXml(matchGroup(REFER_CONTENT, bodyXml));
-            String svrid = matchGroup(REFER_SVRID, bodyXml);
-            putIfPresent(extra, ChannelExtraKeys.QUOTE_MSG_TYPE, referType);
-            putIfPresent(extra, ChannelExtraKeys.QUOTE_CONTENT, firstNonBlank(referContent, "[引用]"));
+            String referBlock = matchGroup(REFER_MSG_BLOCK, appXml);
+            String referXml = referBlock.isBlank() ? appXml : referBlock;
+            String referType = matchGroup(REFER_TYPE, referXml);
+            String referRaw = decodeXml(matchGroup(REFER_CONTENT, referXml));
+            String svrid = matchGroup(REFER_SVRID, referXml);
+            String quoteMsgType = quoteMsgTypeOf(referType);
+            String quoteContent = summarizeReferContent(referType, referRaw);
+            putIfPresent(extra, ChannelExtraKeys.QUOTE_MSG_TYPE, quoteMsgType);
+            putIfPresent(extra, ChannelExtraKeys.QUOTE_CONTENT, quoteContent);
+            putReferSender(referXml, extra);
+            String mediaPath = attachReferMedia(referType, referRaw, extra);
+            if (looksLikeXml(referRaw)) {
+                putIfPresent(extra, "quoteRawPreview", preview(referRaw, 160));
+            }
             String msg = firstNonBlank(title, parsePreviewText(pushContent), "你好");
-            return new MappedContent(MsgType.TEXT, msg, null, blankToNull(svrid), extra);
+            return new MappedContent(MsgType.TEXT, msg, mediaPath, blankToNull(svrid), extra);
         }
         if ("5".equals(appType) || "33".equals(appType) || "36".equals(appType)) {
             if (!url.isBlank()) {
                 extra.put("url", url);
             }
-            return new MappedContent(MsgType.LINK, firstNonBlank(title, "[链接]"), blankToNull(url), null, extra);
+            String label = "33".equals(appType) || "36".equals(appType) ? "[小程序]" : "[链接]";
+            String msg = firstNonBlank(title, label);
+            if (!des.isBlank() && !des.equals(title)) {
+                msg = msg + " " + des;
+            }
+            return new MappedContent(MsgType.LINK, msg, blankToNull(url), null, extra);
         }
         if ("6".equals(appType)) {
-            String fileUrl = firstNonBlank(url, xmlAttr(bodyXml, "cdnattachurl"));
-            return new MappedContent(MsgType.FILE, firstNonBlank(title, "[文件]"), blankToNull(fileUrl), null, extra);
+            String fileUrl = firstNonBlank(url, xmlAttr(appXml, "cdnattachurl"), xmlAttr(bodyXml, "cdnattachurl"));
+            putIfPresent(extra, "aeskey", firstNonBlank(xmlAttr(appXml, "aeskey"), xmlAttr(bodyXml, "aeskey")));
+            putIfPresent(extra, "length", firstNonBlank(
+                    xmlAttr(appXml, "totallen"), xmlAttr(appXml, "length"), xmlAttr(bodyXml, "totallen")));
+            putIfPresent(extra, ChannelExtraKeys.FORMAT, firstNonBlank(
+                    xmlAttr(appXml, "fileext"), xmlAttr(bodyXml, "fileext")));
+            putIfPresent(extra, "attachId", firstNonBlank(
+                    xmlAttr(appXml, "attachid"), xmlAttr(bodyXml, "attachid")));
+            String fileName = firstNonBlank(title, "[文件]");
+            String resolved = blankToNull(fileUrl);
+            if (resolved != null) {
+                resolved = mediaRefOfLocator(resolved).applyToExtra(extra);
+            }
+            return new MappedContent(MsgType.FILE, fileName, resolved, null, extra);
+        }
+        if ("19".equals(appType)) {
+            // 合并转发 / 聊天记录
+            putIfPresent(extra, ChannelExtraKeys.FORWARD_TYPE, "record");
+            String recordTitle = firstNonBlank(title, decodeXml(matchGroup(RECORD_TITLE, bodyXml)), "[聊天记录]");
+            return new MappedContent(MsgType.FORWARD, recordTitle, null, null, extra);
+        }
+        if ("2000".equals(appType)) {
+            return new MappedContent(MsgType.APP,
+                    firstNonBlank("[转账] " + title, "[转账]", parsePreviewText(pushContent)),
+                    null, null, extra);
+        }
+        if ("2001".equals(appType)) {
+            return new MappedContent(MsgType.APP,
+                    firstNonBlank("[红包] " + title, "[红包]", parsePreviewText(pushContent)),
+                    null, null, extra);
+        }
+        if ("3".equals(appType)) {
+            // 音乐分享等
+            if (!url.isBlank()) {
+                extra.put("url", url);
+            }
+            return new MappedContent(MsgType.APP,
+                    firstNonBlank("[音乐] " + title, title, "[音乐]"),
+                    blankToNull(url), null, extra);
         }
         return new MappedContent(MsgType.APP,
-                firstNonBlank(title, parsePreviewText(pushContent), "[应用消息]"),
+                firstNonBlank(title, des, parsePreviewText(pushContent), "[应用消息]"),
                 blankToNull(url), null, extra);
+    }
+
+    private static MsgInfo mapFriendVerify(String accountId, JsonNode item, String source, String receiver,
+                                           String pushContent, String msgSource, String userId, String userName,
+                                           String bodyXml) {
+        String fromUser = firstNonBlank(
+                xmlAttr(bodyXml, "fromusername"),
+                xmlAttr(bodyXml, "username"),
+                userId);
+        if (fromUser.isBlank()) {
+            fromUser = "EventFriendVerify";
+        }
+        String nick = firstNonBlank(xmlAttr(bodyXml, "fromnickname"), xmlAttr(bodyXml, "nickname"), userName);
+        String content = firstNonBlank(xmlAttr(bodyXml, "content"), xmlAttr(bodyXml, "verifycontent"));
+        Map<String, Object> friendExtra = baseExtra(source, receiver, pushContent, msgSource, false,
+                item.path("type").asInt(37));
+        friendExtra.put(ChannelExtraKeys.EVENT, "friend_verify");
+        putIfPresent(friendExtra, ChannelExtraKeys.FRIEND_ID, fromUser);
+        putIfPresent(friendExtra, ChannelExtraKeys.CARD_NICKNAME, nick);
+        putIfPresent(friendExtra, ChannelExtraKeys.CARD_ALIAS, xmlAttr(bodyXml, "alias"));
+        putIfPresent(friendExtra, "ticket", xmlAttr(bodyXml, "ticket"));
+        putIfPresent(friendExtra, "scene", xmlAttr(bodyXml, "scene"));
+        putIfPresent(friendExtra, "sex", xmlAttr(bodyXml, "sex"));
+        putIfPresent(friendExtra, "province", xmlAttr(bodyXml, "province"));
+        putIfPresent(friendExtra, "city", xmlAttr(bodyXml, "city"));
+        putIfPresent(friendExtra, ChannelExtraKeys.THUMB, firstNonBlank(
+                xmlAttr(bodyXml, "bigheadimgurl"), xmlAttr(bodyXml, "smallheadimgurl")));
+        String msg = "[好友申请] " + firstNonBlank(nick, fromUser);
+        if (!content.isBlank()) {
+            msg = msg + "：" + content;
+        }
+        return new MsgInfo(
+                GolemAdapter.PLATFORM, accountId, fromUser,
+                nick,
+                "0", null, msg,
+                buildMsgId(item, receiver, fromUser, "0"),
+                "Friend", MsgType.TEXT, null, null,
+                toEpochMillis(item.path("create_time").asLong(0)),
+                Map.copyOf(friendExtra)
+        );
+    }
+
+    /** 对齐 xchatbot parse-emoji：cdn/md5 多属性回退。 */
+    private static void attachEmojiFields(String xml, Map<String, Object> extra) {
+        String md5 = firstNonBlank(
+                xmlAttr(xml, "md5"),
+                xmlAttr(xml, "androidmd5"),
+                xmlAttr(xml, "externmd5"),
+                xmlAttr(xml, "s60v3md5"),
+                xmlAttr(xml, "s60v5md5"));
+        putIfPresent(extra, ChannelExtraKeys.MD5, md5);
+        putIfPresent(extra, "aeskey", xmlAttr(xml, "aeskey"));
+        putIfPresent(extra, "length", firstNonBlank(xmlAttr(xml, "len"), xmlAttr(xml, "length")));
+        putIfPresent(extra, "width", xmlAttr(xml, "width"));
+        putIfPresent(extra, "height", xmlAttr(xml, "height"));
+    }
+
+    private static String unknownTypeLabel(int wechatType) {
+        return switch (wechatType) {
+            case 50 -> "[通话]";
+            case 53, 62 -> "[视频号]";
+            default -> "";
+        };
+    }
+
+    /** 微信 refermsg.type → 通道 {@link MsgType}。 */
+    private static String quoteMsgTypeOf(String wechatReferType) {
+        return switch (wechatReferType == null ? "" : wechatReferType.trim()) {
+            case "1" -> MsgType.TEXT;
+            case "3" -> MsgType.IMAGE;
+            case "34" -> MsgType.AUDIO;
+            case "43" -> MsgType.VIDEO;
+            case "47" -> MsgType.EMOJI;
+            case "42" -> MsgType.CARD;
+            case "48" -> MsgType.POSITION;
+            case "49" -> MsgType.APP;
+            default -> wechatReferType == null || wechatReferType.isBlank() ? MsgType.TEXT : wechatReferType;
+        };
+    }
+
+    /**
+     * 引用原文可读化：图片/语音等不要把微信 XML 原样交给 Agent。
+     * <p>群聊常见前缀 {@code wxid_xxx,<?xml...}，先剥掉再按类型摘要。</p>
+     */
+    private static String summarizeReferContent(String wechatReferType, String raw) {
+        String content = normalizeReferPayload(raw);
+        String type = wechatReferType == null ? "" : wechatReferType.trim();
+        return switch (type) {
+            case "1" -> firstNonBlank(plainReferText(content), "[文本]");
+            case "3" -> "[图片]";
+            case "34" -> "[语音]";
+            case "43" -> "[视频]";
+            case "47" -> "[表情]";
+            case "42" -> firstNonBlank(
+                    xmlAttr(content, "nickname"),
+                    xmlAttr(content, "username"),
+                    decodeXml(matchGroup(APPMSG_TITLE, content)),
+                    "[名片]");
+            case "48" -> firstNonBlank(
+                    xmlAttr(content, "poiname"),
+                    xmlAttr(content, "label"),
+                    "[位置]");
+            case "49" -> {
+                String nestedTitle = decodeXml(matchGroup(APPMSG_TITLE, content));
+                String nestedUrl = decodeXml(matchGroup(APPMSG_URL, content));
+                String nestedDes = decodeXml(matchGroup(APPMSG_DES, content));
+                String summary = firstNonBlank(nestedTitle, nestedDes, plainReferText(content), "[应用消息]");
+                if (!nestedUrl.isBlank()) {
+                    summary = summary + " " + nestedUrl;
+                }
+                yield summary;
+            }
+            default -> {
+                if (looksLikeXml(content) || content.contains("<img") || content.contains("<msg")) {
+                    yield defaultLabel(quoteMsgTypeOf(type));
+                }
+                yield firstNonBlank(plainReferText(content), "[引用]");
+            }
+        };
+    }
+
+    /**
+     * 对齐 xchatbot parse-refer-msg：从 refer content 抽出媒体定位符写入 extra/path。
+     * 不在此下载；PLATFORM + aeskey 交给 {@code GolemMediaResolver}。
+     */
+    private static String attachReferMedia(String wechatReferType, String referRaw, Map<String, Object> extra) {
+        String content = normalizeReferPayload(referRaw);
+        if (content.isBlank()) {
+            return null;
+        }
+        String type = wechatReferType == null ? "" : wechatReferType.trim();
+        return switch (type) {
+            case "3" -> {
+                String cdn = firstNonBlank(
+                        xmlAttr(content, "cdnbigimgurl"),
+                        xmlAttr(content, "cdnmidimgurl"),
+                        xmlAttr(content, "cdnthumburl")
+                );
+                String aes = xmlAttr(content, "aeskey");
+                putIfPresent(extra, "aeskey", aes);
+                putIfPresent(extra, "length",
+                        firstNonBlank(xmlAttr(content, "length"), xmlAttr(content, "hdlength")));
+                if (cdn.isBlank()) {
+                    yield null;
+                }
+                yield mediaRefOfLocator(cdn).applyToExtra(extra);
+            }
+            case "43" -> {
+                String path = firstNonBlank(
+                        xmlAttr(content, "cdnvideourl"),
+                        xmlAttr(content, "cdndataurl"),
+                        xmlAttr(content, "cdnurl")
+                );
+                putIfPresent(extra, ChannelExtraKeys.THUMB, xmlAttr(content, "cdnthumburl"));
+                putIfPresent(extra, ChannelExtraKeys.DURATION,
+                        firstNonBlank(xmlAttr(content, "playlength"), xmlAttr(content, "duration")));
+                putIfPresent(extra, "aeskey", firstNonBlank(
+                        xmlAttr(content, "aeskey"),
+                        xmlAttr(content, "cdnvideokey"),
+                        xmlAttr(content, "cdndatakey")));
+                putIfPresent(extra, "length",
+                        firstNonBlank(xmlAttr(content, "length"), xmlAttr(content, "playlength")));
+                // 封面 aes 可能与视频不同
+                putIfPresent(extra, "thumbAeskey", firstNonBlank(
+                        xmlAttr(content, "cdnthumbkey"),
+                        xmlAttr(content, "cdnthumbaeskey")));
+                if (path.isBlank()) {
+                    yield null;
+                }
+                yield mediaRefOfLocator(path).applyToExtra(extra);
+            }
+            case "34" -> {
+                String path = firstNonBlank(xmlAttr(content, "voiceurl"), xmlAttr(content, "voiceUrl"));
+                putIfPresent(extra, ChannelExtraKeys.DURATION,
+                        firstNonBlank(xmlAttr(content, "voicelength"), xmlAttr(content, "playlength")));
+                putIfPresent(extra, ChannelExtraKeys.FORMAT, xmlAttr(content, "voiceformat"));
+                putIfPresent(extra, "length", firstNonBlank(
+                        xmlAttr(content, "length"), xmlAttr(content, "voicelength")));
+                putIfPresent(extra, "bufferId", firstNonBlank(
+                        xmlAttr(content, "bufid"),
+                        xmlAttr(content, "bufferid"),
+                        xmlAttr(content, "buffer_id")));
+                putIfPresent(extra, "aeskey", xmlAttr(content, "aeskey"));
+                if (path.isBlank()) {
+                    yield null;
+                }
+                yield mediaRefOfLocator(path).applyToExtra(extra);
+            }
+            case "47" -> {
+                attachEmojiFields(content, extra);
+                String path = firstNonBlank(
+                        xmlAttr(content, "cdnurl"),
+                        xmlAttr(content, "encrypturl"),
+                        xmlAttr(content, "externurl"),
+                        xmlAttr(content, "thumburl"),
+                        xmlAttr(content, "emoji_url"));
+                if (path.isBlank()) {
+                    yield null;
+                }
+                yield mediaRefOfLocator(path).applyToExtra(extra);
+            }
+            default -> null;
+        };
+    }
+
+    private static void putReferSender(String referXml, Map<String, Object> extra) {
+        String fromusr = decodeXml(matchGroup(REFER_FROMUSR, referXml));
+        String chatusr = decodeXml(matchGroup(REFER_CHATUSR, referXml));
+        String display = decodeXml(matchGroup(REFER_DISPLAY, referXml));
+        String from = "";
+        if (!chatusr.isBlank() && !chatusr.endsWith("@chatroom")) {
+            from = chatusr;
+        } else if (!fromusr.isBlank() && !fromusr.endsWith("@chatroom")) {
+            from = fromusr;
+        }
+        putIfPresent(extra, ChannelExtraKeys.QUOTE_FROM, from);
+        putIfPresent(extra, ChannelExtraKeys.QUOTE_FROM_NAME, display);
+    }
+
+    /** 剥群前缀 / {@code id,<?xml} 等，得到可解析的 refer 载荷。 */
+    private static String normalizeReferPayload(String raw) {
+        return stripGroupContentPrefix(stripReferPrefix(raw));
+    }
+
+    /** {@code id,<?xml...} / {@code id:<xml>} → 去掉发送者前缀，只留载荷。 */
+    private static String stripReferPrefix(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String text = raw.trim();
+        int xmlAt = text.indexOf("<?xml");
+        if (xmlAt < 0) {
+            xmlAt = text.indexOf("<msg");
+        }
+        if (xmlAt > 0) {
+            // 常见：wxid_xxx,<?xml 或 wxid_xxx:\n<msg
+            char sep = text.charAt(xmlAt - 1);
+            if (sep == ',' || sep == ':' || Character.isWhitespace(sep)) {
+                return text.substring(xmlAt).trim();
+            }
+        }
+        return text;
+    }
+
+    /** 对齐 xchatbot stripGroupPrefix：{@code wxid:\n<xml>}。 */
+    private static String stripGroupContentPrefix(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        int idx = content.indexOf(":\n");
+        if (idx > 0 && idx < 80) {
+            return content.substring(idx + 2).trim();
+        }
+        return content.trim();
+    }
+
+    private static String plainReferText(String content) {
+        if (content == null || content.isBlank() || looksLikeXml(content)) {
+            return "";
+        }
+        // 群聊引用文本偶发 "wxid_xxx:\n正文"
+        String text = content.trim();
+        int nl = text.indexOf('\n');
+        if (nl > 0 && nl < 64 && !text.substring(0, nl).contains(" ")) {
+            String head = text.substring(0, nl);
+            if (head.contains("wxid") || head.endsWith("@chatroom") || head.matches("\\w+")) {
+                text = text.substring(nl + 1).trim();
+            }
+        }
+        return text.replace('\n', ' ').trim();
+    }
+
+    private static boolean looksLikeXml(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.trim();
+        return t.startsWith("<?xml") || t.startsWith("<msg") || t.startsWith("<appmsg");
     }
 
     private static Map<String, Object> baseExtra(String source, String receiver, String pushContent,

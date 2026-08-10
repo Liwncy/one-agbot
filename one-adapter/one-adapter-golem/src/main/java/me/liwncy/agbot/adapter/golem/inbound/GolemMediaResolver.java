@@ -34,7 +34,8 @@ public class GolemMediaResolver {
         if (msg == null || !properties.isMediaResolveEnabled()) {
             return msg;
         }
-        String type = MsgType.normalize(msg.msgType());
+        // 引用图/视频等：顶层 msgType 常为 TEXT，按 quoteMsgType 走下载
+        String type = effectiveMediaType(msg);
         if (!isMediaType(type)) {
             return msg;
         }
@@ -45,12 +46,14 @@ public class GolemMediaResolver {
         try {
             ResolvedMedia resolved = download(msg, type, current);
             if (resolved == null || resolved.bytes() == null || resolved.bytes().length == 0) {
-                log.warn("Golem media resolve empty type={} msgId={}", type, msg.msgId());
+                log.warn("Golem media resolve empty type={} quoteType={} msgId={}",
+                        msg.msgType(), type, msg.msgId());
                 return msg;
             }
             return rewrite(msg, resolved);
         } catch (Exception e) {
-            log.warn("Golem media resolve failed type={} msgId={}: {}", type, msg.msgId(), e.getMessage());
+            log.warn("Golem media resolve failed type={} quoteType={} msgId={}: {}",
+                    msg.msgType(), type, msg.msgId(), e.getMessage());
             return msg;
         }
     }
@@ -66,8 +69,9 @@ public class GolemMediaResolver {
                 string(extra.get(ChannelExtraKeys.MEDIA_URL))
         );
         String thumb = string(extra.get(ChannelExtraKeys.THUMB));
+        String thumbAes = firstNonBlank(string(extra.get("thumbAeskey")), aesKey);
 
-        // 1) CDN 下载（图/视频）
+        // 1) CDN 下载（图/视频）——引用消息主要靠这条（外层 msgId 不是原图 id）
         if (!cdnId.isBlank() && !aesKey.isBlank()) {
             try {
                 byte[] bytes = switch (type) {
@@ -82,10 +86,10 @@ public class GolemMediaResolver {
             } catch (Exception e) {
                 log.debug("CDN download failed, fallback msg download: {}", e.getMessage());
             }
-            // 视频可尝试封面
-            if (MsgType.VIDEO.equals(type) && !thumb.isBlank()) {
+            // 视频可尝试封面（引用视频给 Agent 看封面更有用）
+            if (MsgType.VIDEO.equals(type) && !thumb.isBlank() && !thumbAes.isBlank()) {
                 try {
-                    byte[] cover = apiClient.cdnDownloadImage(thumb, aesKey);
+                    byte[] cover = apiClient.cdnDownloadImage(thumb, thumbAes);
                     if (cover.length > 0) {
                         return new ResolvedMedia(cover, "jpg", "image/jpeg");
                     }
@@ -95,8 +99,11 @@ public class GolemMediaResolver {
             }
         }
 
-        // 2) 按消息 id 下载
+        // 2) 按消息 id 下载（直发媒体）；引用优先用 replyToMsgId(svrid) 作 newId
         long[] ids = parsePackedIds(msg.msgId());
+        if (ids == null) {
+            ids = idsFromReplyTo(msg.replyToMsgId());
+        }
         long size = parseLong(extra.get("length"), parseLong(extra.get(ChannelExtraKeys.MEDIA_SIZE), 0L));
         if (ids != null && size > 0) {
             try {
@@ -119,6 +126,28 @@ public class GolemMediaResolver {
             }
         }
         return null;
+    }
+
+    /** 顶层类型或引用媒体类型。 */
+    private static String effectiveMediaType(MsgInfo msg) {
+        String type = MsgType.normalize(msg.msgType());
+        if (isMediaType(type)) {
+            return type;
+        }
+        String quoteType = string(msg.extra() == null ? null : msg.extra().get(ChannelExtraKeys.QUOTE_MSG_TYPE));
+        if (isMediaType(quoteType)) {
+            return quoteType;
+        }
+        return type;
+    }
+
+    private static long[] idsFromReplyTo(String replyToMsgId) {
+        long svrid = parseLong(replyToMsgId, 0L);
+        if (svrid <= 0) {
+            return null;
+        }
+        // downloadImageByMsg(id=clientId, newId=svrid)；缺 clientId 时用 0
+        return new long[]{svrid, 0L};
     }
 
     private MsgInfo rewrite(MsgInfo msg, ResolvedMedia resolved) throws Exception {

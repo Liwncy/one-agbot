@@ -8,6 +8,10 @@ public final class ChannelExtraKeys {
     public static final String MENTION_IDS = "mentionIds";
     public static final String QUOTE_CONTENT = "quoteContent";
     public static final String QUOTE_MSG_TYPE = "quoteMsgType";
+    /** 被引用消息的发送者 wxid（refermsg chatusr/fromusr） */
+    public static final String QUOTE_FROM = "quoteFrom";
+    /** 被引用消息的发送者展示名（refermsg displayname） */
+    public static final String QUOTE_FROM_NAME = "quoteFromName";
     public static final String THUMB = "thumb";
     public static final String DURATION = "duration";
     public static final String MD5 = "md5";
@@ -26,6 +30,10 @@ public final class ChannelExtraKeys {
     public static final String CARD_ALIAS = "cardAlias";
     public static final String APP_TYPE = "appType";
     public static final String FORWARD_TYPE = "forwardType";
+    /** 链接/应用描述（appmsg des） */
+    public static final String DESC = "desc";
+    /** 生命周期事件：friend_verify / system 等 */
+    public static final String EVENT = "event";
     public static final String LAT = "lat";
     public static final String LON = "lon";
     public static final String LABEL = "label";

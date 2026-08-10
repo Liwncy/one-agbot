@@ -10,29 +10,27 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 群聊点名后的连续对话窗口：同一用户短时间内免 @ 可继续聊（对齐 xchatbot activation）。
+ * 群聊点名后的跟聊窗口运行时状态（TTL）。
+ * <p>窗口时长按群配置在 {@link GolemGroupRespondPolicy}，此处只负责「当前是否在窗内」。</p>
  */
 public class GolemMentionActivation {
     private static final Logger log = LoggerFactory.getLogger(GolemMentionActivation.class);
 
     private final StringRedisTemplate redis;
-    private final Duration window;
     private final Map<String, Long> localExpireAt = new ConcurrentHashMap<>();
 
-    public GolemMentionActivation(StringRedisTemplate redis, Duration window) {
+    public GolemMentionActivation(StringRedisTemplate redis) {
         this.redis = redis;
-        this.window = window == null || window.isNegative() ? Duration.ZERO : window;
-        if (this.window.isZero()) {
-            log.info("Golem mention activation window disabled");
-        } else if (redis != null) {
-            log.info("Golem mention activation using Redis window={}", this.window);
+        if (redis != null) {
+            log.info("Golem mention follow-up state using Redis");
         } else {
-            log.info("Golem mention activation using memory window={}", this.window);
+            log.info("Golem mention follow-up state using memory");
         }
     }
 
-    public boolean isActive(String accountId, String groupId, String userId) {
-        if (window.isZero()) {
+    public boolean isActive(String accountId, String groupId, String userId, Duration window) {
+        Duration w = normalize(window);
+        if (w.isZero()) {
             return false;
         }
         String key = key(accountId, groupId, userId);
@@ -51,16 +49,24 @@ public class GolemMentionActivation {
         return true;
     }
 
-    public void touch(String accountId, String groupId, String userId) {
-        if (window.isZero()) {
+    public void touch(String accountId, String groupId, String userId, Duration window) {
+        Duration w = normalize(window);
+        if (w.isZero()) {
             return;
         }
         String key = key(accountId, groupId, userId);
         if (redis != null) {
-            redis.opsForValue().set(redisKey(key), "1", window);
+            redis.opsForValue().set(redisKey(key), "1", w);
             return;
         }
-        localExpireAt.put(key, System.currentTimeMillis() + window.toMillis());
+        localExpireAt.put(key, System.currentTimeMillis() + w.toMillis());
+    }
+
+    private static Duration normalize(Duration window) {
+        if (window == null || window.isNegative() || window.isZero()) {
+            return Duration.ZERO;
+        }
+        return window;
     }
 
     private static String key(String accountId, String groupId, String userId) {

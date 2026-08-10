@@ -22,13 +22,19 @@ public class GolemSessionCommandHandler {
 
     private final GolemProperties properties;
     private final GolemSessionActivation sessionActivation;
+    private final GolemGroupRespondPolicy respondPolicy;
+    private final GolemGroupModeCommandHandler groupModeCommandHandler;
     private final GolemApiClient apiClient;
 
     public GolemSessionCommandHandler(GolemProperties properties,
                                       GolemSessionActivation sessionActivation,
+                                      GolemGroupRespondPolicy respondPolicy,
+                                      GolemGroupModeCommandHandler groupModeCommandHandler,
                                       GolemApiClient apiClient) {
         this.properties = properties;
         this.sessionActivation = sessionActivation;
+        this.respondPolicy = respondPolicy;
+        this.groupModeCommandHandler = groupModeCommandHandler;
         this.apiClient = apiClient;
     }
 
@@ -62,7 +68,13 @@ public class GolemSessionCommandHandler {
         return switch (action.get()) {
             case ENABLE -> {
                 sessionActivation.activate(msg.accountId(), peerKey);
-                reply(receiver, msg.isPrivateChat() ? "好了，来聊吧" : "好了，这个群继续聊");
+                if (!msg.isPrivateChat()) {
+                    // 首次开启写入默认群配置：点名 + 跟聊关
+                    respondPolicy.ensureDefaults(msg.accountId(), msg.groupId());
+                    reply(receiver, "好了，这个群继续聊；" + groupModeCommandHandler.statusLine(msg));
+                } else {
+                    reply(receiver, "好了，来聊吧");
+                }
                 log.info("Session activated accountId={} peerKey={}", msg.accountId(), peerKey);
                 yield true;
             }
@@ -74,9 +86,14 @@ public class GolemSessionCommandHandler {
             }
             case STATUS -> {
                 boolean on = sessionActivation.isActive(msg.accountId(), peerKey);
-                reply(receiver, on
-                        ? (msg.isPrivateChat() ? "开着呢，直接说就行" : "这个群开着呢")
-                        : (msg.isPrivateChat() ? "还没开始，发「开始」找我" : "这个群歇着呢"));
+                if (msg.isPrivateChat()) {
+                    reply(receiver, on ? "开着呢，直接说就行" : "还没开始，发「开始」找我");
+                } else {
+                    String modeLine = groupModeCommandHandler.statusLine(msg);
+                    reply(receiver, on
+                            ? ("这个群开着呢；" + modeLine)
+                            : ("这个群歇着呢；" + modeLine + "（先「开始」再聊）"));
+                }
                 yield true;
             }
         };

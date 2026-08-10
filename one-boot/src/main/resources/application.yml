@@ -43,12 +43,14 @@ agbot:
       session-require-activation: true
       # Redis 不可用时的会话激活落盘
       session-active-store-path: ./data/golem/session-active.txt
-      # 群聊仅 @ / 点名机器人时才回复；私聊不受影响（会话激活后仍生效）
+      # 兼容旧语义；实际默认写在群配置里：点名 + 跟聊关（Redis key agbot:golem:group-settings）
       group-require-mention: true
-      # 点名后同一用户免 @ 连续聊的窗口（0 关闭）
-      group-activation-window: 60s
+      # 已废弃全局跟聊：跟聊秒数按群存在 group-settings.followUpSeconds（默认 0=关），指令「跟聊 60 / 跟聊 关」
+      group-activation-window: 0s
       # Redis 不可用时的群开关落盘文件（session-require-activation=false 时使用）
       group-gate-store-path: ./data/golem/group-disabled.txt
+      # 按群完整配置落盘（模式/跟聊秒数/规则）；Redis 可用时用 Hash agbot:golem:group-settings
+      group-respond-store-path: ./data/golem/group-respond.txt
       # 入站媒体 PLATFORM → FILE/BASE64（CDN/消息下载）
       media-resolve-enabled: true
       media-store-path: ./data/golem/media

@@ -3,11 +3,16 @@ package me.liwncy.agbot.adapter.golem;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
+import me.liwncy.agbot.adapter.golem.inbound.GolemMentionDetector;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.GolemGroupModeCommandHandler;
+import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondMode;
+import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
+import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import org.slf4j.Logger;
@@ -22,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -37,26 +43,32 @@ public class GolemWebhookController {
     private final AdapterRuntime runtime;
     private final GolemProperties properties;
     private final GolemGroupGate groupGate;
+    private final GolemGroupRespondPolicy respondPolicy;
     private final GolemMentionActivation mentionActivation;
     private final GolemSessionActivation sessionActivation;
     private final GolemSessionCommandHandler sessionCommandHandler;
+    private final GolemGroupModeCommandHandler groupModeCommandHandler;
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
 
     public GolemWebhookController(AdapterRuntime runtime,
                                   GolemProperties properties,
                                   GolemGroupGate groupGate,
+                                  GolemGroupRespondPolicy respondPolicy,
                                   GolemMentionActivation mentionActivation,
                                   GolemSessionActivation sessionActivation,
                                   GolemSessionCommandHandler sessionCommandHandler,
+                                  GolemGroupModeCommandHandler groupModeCommandHandler,
                                   GolemOwnerCommandHandler ownerCommandHandler,
                                   GolemMediaResolver mediaResolver) {
         this.runtime = runtime;
         this.properties = properties;
         this.groupGate = groupGate;
+        this.respondPolicy = respondPolicy;
         this.mentionActivation = mentionActivation;
         this.sessionActivation = sessionActivation;
         this.sessionCommandHandler = sessionCommandHandler;
+        this.groupModeCommandHandler = groupModeCommandHandler;
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
     }
@@ -79,7 +91,7 @@ public class GolemWebhookController {
 
         boolean mentionConfigMissing = isBlank(properties.getBotWechatId()) && isBlank(properties.getBotWechatName());
         if (properties.isGroupRequireMention() && mentionConfigMissing) {
-            log.warn("群聊仅@回复已开启，但未配置 bot-wechat-id / bot-wechat-name，群消息将被忽略");
+            log.warn("默认群模式为点名，但未配置 bot-wechat-id / bot-wechat-name，点名识别可能失效");
         }
 
         String botId = trim(properties.getBotWechatId());
@@ -88,6 +100,7 @@ public class GolemWebhookController {
         int skippedDisabled = 0;
         int skippedInactive = 0;
         int sessionCommands = 0;
+        int modeCommands = 0;
         int ownerCommands = 0;
         for (MsgInfo raw : messages) {
             MsgInfo msg = mediaResolver.resolve(raw);
@@ -98,6 +111,11 @@ public class GolemWebhookController {
             // 会话启停指令优先（未激活时也能「开始」）
             if (sessionCommandHandler.tryHandle(msg)) {
                 sessionCommands++;
+                continue;
+            }
+            // 群模式 / 规则指令（主人，未激活也可改）
+            if (groupModeCommandHandler.tryHandle(msg)) {
+                modeCommands++;
                 continue;
             }
 
@@ -124,30 +142,49 @@ public class GolemWebhookController {
             }
 
             boolean mentioned = isBotMentioned(msg);
-            boolean activated = !msg.isPrivateChat()
-                    && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId());
+            String pushContent = stringExtra(msg, "pushContent");
+            // 跟别人说话（atuserlist / 正文 @别人）时不接——全量、随机、跟聊窗一律让路
             if (!msg.isPrivateChat()
-                    && properties.isGroupRequireMention()
-                    && !mentioned
-                    && !activated) {
+                    && GolemMentionDetector.isTalkingToOthersOnly(
+                    mentionIds(msg),
+                    msg.msg(),
+                    pushContent,
+                    properties.getBotWechatId(),
+                    properties.getBotWechatName())) {
                 skippedNoMention++;
-                log.info("Skip no-mention group accountId={} groupId={} userId={} msg={} push={} msgSource={} botMentioned={}",
+                log.info("Skip talking-to-others accountId={} groupId={} userId={} mentionIds={} msg={}",
+                        msg.accountId(), msg.groupId(), msg.userId(),
+                        mentionIds(msg), preview(msg.msg()));
+                continue;
+            }
+            Duration followUp = msg.isPrivateChat()
+                    ? Duration.ZERO
+                    : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
+            boolean activated = !msg.isPrivateChat()
+                    && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId(), followUp);
+            if (!msg.isPrivateChat() && !respondPolicy.allows(msg, mentioned, activated)) {
+                skippedNoMention++;
+                log.info("Skip by group mode accountId={} groupId={} userId={} mode={} followUp={}s mentioned={} activated={} msg={}",
                         msg.accountId(),
                         msg.groupId(),
                         msg.userId(),
-                        preview(msg.msg()),
-                        preview(String.valueOf(msg.extra().getOrDefault("pushContent", ""))),
-                        preview(String.valueOf(msg.extra().getOrDefault("msgSource", ""))),
-                        msg.extra().get("botMentioned"));
+                        respondPolicy.getMode(msg.accountId(), msg.groupId()),
+                        followUp.toSeconds(),
+                        mentioned,
+                        activated,
+                        preview(msg.msg()));
                 continue;
             }
-            // 点名或窗口内跟聊：刷新连续对话窗口
-            if (!msg.isPrivateChat() && (mentioned || activated)) {
-                mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId());
+            // 点名或跟聊窗续窗；随机命中也可续（若开了跟聊）
+            if (!msg.isPrivateChat() && (mentioned || activated
+                    || respondPolicy.getMode(msg.accountId(), msg.groupId()) == GolemGroupRespondMode.RANDOM)) {
+                mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId(), followUp);
             }
             accepted++;
-            log.info("Accept message accountId={} groupId={} userId={} userName={} type={} mentioned={} activated={} msg={}",
+            log.info("Accept message accountId={} groupId={} userId={} userName={} type={} mode={} followUp={}s mentioned={} activated={} msg={}",
                     msg.accountId(), msg.groupId(), msg.userId(), msg.userName(), msg.msgType(),
+                    msg.isPrivateChat() ? "-" : respondPolicy.getMode(msg.accountId(), msg.groupId()),
+                    followUp.toSeconds(),
                     mentioned, activated, preview(msg.msg()));
             runtime.receive(msg).whenComplete((reply, err) -> {
                 if (err != null) {
@@ -159,11 +196,11 @@ public class GolemWebhookController {
                 }
             });
         }
-        // 全是未激活静默跳过时不刷 info，避免关闭会话刷屏
-        if (accepted > 0 || sessionCommands > 0 || ownerCommands > 0
+        if (accepted > 0 || sessionCommands > 0 || modeCommands > 0 || ownerCommands > 0
                 || skippedNoMention > 0 || skippedDisabled > 0) {
-            log.info("Golem webhook accountId={} accepted={} skippedNoMention={} skippedDisabled={} skippedInactive={} sessionCommands={} ownerCommands={}",
-                    accountId, accepted, skippedNoMention, skippedDisabled, skippedInactive, sessionCommands, ownerCommands);
+            log.info("Golem webhook accountId={} accepted={} skippedMode={} skippedDisabled={} skippedInactive={} sessionCommands={} modeCommands={} ownerCommands={}",
+                    accountId, accepted, skippedNoMention, skippedDisabled, skippedInactive,
+                    sessionCommands, modeCommands, ownerCommands);
         } else if (skippedInactive > 0) {
             log.debug("Golem webhook accountId={} skippedInactive={}", accountId, skippedInactive);
         }
@@ -174,6 +211,7 @@ public class GolemWebhookController {
                 "skippedDisabled", skippedDisabled,
                 "skippedInactive", skippedInactive,
                 "sessionCommands", sessionCommands,
+                "modeCommands", modeCommands,
                 "ownerCommands", ownerCommands
         );
     }
@@ -181,6 +219,35 @@ public class GolemWebhookController {
     private static boolean isBotMentioned(MsgInfo msg) {
         Object flag = msg.extra().get("botMentioned");
         return Boolean.TRUE.equals(flag);
+    }
+
+    private static String stringExtra(MsgInfo msg, String key) {
+        if (msg == null || msg.extra() == null || key == null) {
+            return "";
+        }
+        Object v = msg.extra().get(key);
+        return v == null ? "" : String.valueOf(v);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> mentionIds(MsgInfo msg) {
+        if (msg == null || msg.extra() == null) {
+            return List.of();
+        }
+        Object raw = msg.extra().get(ChannelExtraKeys.MENTION_IDS);
+        if (raw instanceof List<?> list) {
+            List<String> out = new java.util.ArrayList<>();
+            for (Object item : list) {
+                if (item != null && !String.valueOf(item).isBlank()) {
+                    out.add(String.valueOf(item).trim());
+                }
+            }
+            return out;
+        }
+        if (raw != null && !String.valueOf(raw).isBlank()) {
+            return List.of(String.valueOf(raw).trim().split("[,\\s]+"));
+        }
+        return List.of();
     }
 
     private static boolean isBlank(String value) {

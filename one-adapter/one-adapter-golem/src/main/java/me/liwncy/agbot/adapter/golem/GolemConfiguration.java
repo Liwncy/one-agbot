@@ -3,11 +3,14 @@ package me.liwncy.agbot.adapter.golem;
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.FileGolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.FileGolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.RedisGolemGroupGate;
+import me.liwncy.agbot.adapter.golem.session.RedisGolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.RedisGolemSessionActivation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,13 +50,12 @@ public class GolemConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(GolemMentionActivation.class)
-    public GolemMentionActivation golemMentionActivation(ObjectProvider<StringRedisTemplate> redis,
-                                                         GolemProperties properties) {
+    public GolemMentionActivation golemMentionActivation(ObjectProvider<StringRedisTemplate> redis) {
         StringRedisTemplate template = redis.getIfAvailable();
         if (template != null && pingRedis(template)) {
-            return new GolemMentionActivation(template, properties.getGroupActivationWindow());
+            return new GolemMentionActivation(template);
         }
-        return new GolemMentionActivation(null, properties.getGroupActivationWindow());
+        return new GolemMentionActivation(null);
     }
 
     @Bean
@@ -72,6 +74,18 @@ public class GolemConfiguration {
         }
         Path storeFile = Path.of(properties.getSessionActiveStorePath()).toAbsolutePath().normalize();
         return new FileGolemSessionActivation(storeFile);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GolemGroupRespondPolicy.class)
+    public GolemGroupRespondPolicy golemGroupRespondPolicy(ObjectProvider<StringRedisTemplate> redis,
+                                                           GolemProperties properties) {
+        StringRedisTemplate template = redis.getIfAvailable();
+        if (template != null && pingRedis(template)) {
+            return new RedisGolemGroupRespondPolicy(template);
+        }
+        Path storeFile = Path.of(properties.getGroupRespondStorePath()).toAbsolutePath().normalize();
+        return new FileGolemGroupRespondPolicy(storeFile);
     }
 
     private static boolean pingRedis(StringRedisTemplate template) {

@@ -30,7 +30,7 @@ public class GolemAdapter implements ChatAdapter {
             .inboundTypes(Set.of(
                     MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,
                     MsgType.FILE, MsgType.EMOJI, MsgType.LINK, MsgType.CARD,
-                    MsgType.APP, MsgType.POSITION
+                    MsgType.APP, MsgType.POSITION, MsgType.FORWARD
             ))
             .outboundTypes(Set.of(
                     MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,

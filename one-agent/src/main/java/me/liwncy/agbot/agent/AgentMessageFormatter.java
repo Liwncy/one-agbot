@@ -39,7 +39,27 @@ final class AgentMessageFormatter {
             case MsgType.FORWARD -> firstNonBlank(msgInfo.msg(), "请查看转发内容");
             default -> firstNonBlank(msgInfo.msg(), "[" + type + "]");
         };
-        return new AgentUserInput(type, withSpeaker(msgInfo, appendQuote(content, extra)), media);
+        String text = withSpeaker(msgInfo, appendQuote(content, extra));
+        // 引用图/表情/视频封面：顶层仍是 TEXT，附件按引用类型上传
+        String agentType = resolveAgentMediaType(type, media, extra);
+        return new AgentUserInput(agentType, text, media);
+    }
+
+    /**
+     * 文本引用携带可用媒体时，把 Agent 侧类型抬到 image/emoji/video，便于挂 OpenAPI 附件。
+     */
+    private static String resolveAgentMediaType(String msgType, MediaRef media, Map<String, Object> extra) {
+        if (media == null) {
+            return msgType;
+        }
+        if (MsgType.IMAGE.equals(msgType) || MsgType.EMOJI.equals(msgType) || MsgType.VIDEO.equals(msgType)) {
+            return msgType;
+        }
+        String quoteType = stringExtra(extra, ChannelExtraKeys.QUOTE_MSG_TYPE);
+        if (MsgType.IMAGE.equals(quoteType) || MsgType.EMOJI.equals(quoteType) || MsgType.VIDEO.equals(quoteType)) {
+            return quoteType;
+        }
+        return msgType;
     }
 
     /**
@@ -101,10 +121,14 @@ final class AgentMessageFormatter {
 
     private static String linkContent(MsgInfo msgInfo, Map<String, Object> extra) {
         String title = blankToEmpty(msgInfo.msg());
+        String desc = stringExtra(extra, ChannelExtraKeys.DESC);
         String url = firstNonBlank(stringExtra(extra, "url"), blankToEmpty(msgInfo.path()));
         StringBuilder sb = new StringBuilder("请查看链接");
         if (!title.isBlank()) {
             sb.append("：").append(title);
+        }
+        if (!desc.isBlank() && !title.contains(desc)) {
+            sb.append("（").append(desc).append('）');
         }
         if (!url.isBlank()) {
             sb.append(' ').append(url);
@@ -128,12 +152,18 @@ final class AgentMessageFormatter {
     }
 
     private static String appContent(String body, Map<String, Object> extra) {
-        String appType = stringExtra(extra, ChannelExtraKeys.APP_TYPE);
         String text = blankToEmpty(body);
-        if (!appType.isBlank()) {
-            return firstNonBlank(text, "应用消息 type=" + appType);
+        if (!text.isBlank()) {
+            return text;
         }
-        return firstNonBlank(text, "应用消息");
+        String appType = stringExtra(extra, ChannelExtraKeys.APP_TYPE);
+        return switch (appType) {
+            case "2000" -> "[转账]";
+            case "2001" -> "[红包]";
+            case "3" -> "[音乐]";
+            case "33", "36" -> "[小程序]";
+            default -> appType.isBlank() ? "应用消息" : "应用消息 type=" + appType;
+        };
     }
 
     private static String appendQuote(String text, Map<String, Object> extra) {
@@ -141,14 +171,21 @@ final class AgentMessageFormatter {
         if (quote.isBlank()) {
             return text;
         }
+        // quoteMsgType 已是通道类型（image/text/...）；正文侧已做可读摘要，避免再塞微信 type 数字或 XML
         String quoteType = stringExtra(extra, ChannelExtraKeys.QUOTE_MSG_TYPE);
+        String quoteFrom = firstNonBlank(
+                stringExtra(extra, ChannelExtraKeys.QUOTE_FROM_NAME),
+                stringExtra(extra, ChannelExtraKeys.QUOTE_FROM));
         StringBuilder sb = new StringBuilder();
         if (!text.isBlank()) {
             sb.append(text).append('\n');
         }
         sb.append("[引用");
-        if (!quoteType.isBlank()) {
+        if (!quoteType.isBlank() && !"text".equalsIgnoreCase(quoteType)) {
             sb.append(':').append(quoteType);
+        }
+        if (!quoteFrom.isBlank()) {
+            sb.append(' ').append(quoteFrom);
         }
         sb.append("] ").append(trim(quote, 500));
         return sb.toString().trim();

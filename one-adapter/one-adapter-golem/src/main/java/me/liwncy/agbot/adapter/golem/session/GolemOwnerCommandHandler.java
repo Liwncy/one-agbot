@@ -22,13 +22,16 @@ public class GolemOwnerCommandHandler {
 
     private final GolemProperties properties;
     private final GolemGroupGate groupGate;
+    private final GolemGroupModeCommandHandler groupModeCommandHandler;
     private final GolemApiClient apiClient;
 
     public GolemOwnerCommandHandler(GolemProperties properties,
                                     GolemGroupGate groupGate,
+                                    GolemGroupModeCommandHandler groupModeCommandHandler,
                                     GolemApiClient apiClient) {
         this.properties = properties;
         this.groupGate = groupGate;
+        this.groupModeCommandHandler = groupModeCommandHandler;
         this.apiClient = apiClient;
     }
 
@@ -72,7 +75,10 @@ public class GolemOwnerCommandHandler {
             }
             case STATUS -> {
                 boolean on = groupGate.isEnabled(msg.accountId(), msg.groupId());
-                reply(receiver, on ? "这个群开着呢" : "这个群歇着呢");
+                String modeLine = groupModeCommandHandler.statusLine(msg);
+                reply(receiver, on
+                        ? ("这个群开着呢；" + modeLine)
+                        : ("这个群歇着呢；" + modeLine));
                 yield true;
             }
         };

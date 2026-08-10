@@ -1,7 +1,11 @@
 package me.liwncy.agbot.adapter.golem.inbound;
 
 import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,36 +45,182 @@ public final class GolemMentionDetector {
         String source = decodeXml(msgSource == null ? "" : msgSource);
 
         if (!botId.isEmpty()) {
+            // 正文里写了机器人 wxid，或 atuserlist 明确点到机器人
             if (text.contains(normalizeForMatch(botId))) {
                 return true;
             }
             if (atuserListContains(source, botId)) {
                 return true;
             }
-            // 深搜拼进来的原始片段里直接出现 bot wxid + at 标记
-            if (source.toLowerCase(Locale.ROOT).contains(botId.toLowerCase(Locale.ROOT))
-                    && (source.contains("atuserlist") || source.contains("@") || source.contains("＠"))) {
-                return true;
-            }
         }
         if (!botName.isEmpty()) {
             String normalizedName = normalizeForMatch(botName);
             if (!normalizedName.isEmpty()) {
-                // 正文/预览任意位置出现昵称
-                if (text.contains(normalizedName)) {
-                    return true;
-                }
-                // @ 与昵称之间可能有空格/特殊空白：@ 小聪明儿
+                // 仅认 @昵称，避免正文里碰巧出现昵称字样、或「问别人」被当成问机器人
                 if (Pattern.compile("[@＠]\\s*" + Pattern.quote(normalizedName)).matcher(text).find()) {
                     return true;
                 }
-                // 原始串未 normalize 时再扫一遍（防止特殊空白被过度剥离）
-                if (rawContent.contains(botName) || rawPush.contains(botName)) {
+                if (Pattern.compile("[@＠]\\s*" + Pattern.quote(botName)).matcher(rawContent).find()
+                        || Pattern.compile("[@＠]\\s*" + Pattern.quote(botName)).matcher(rawPush).find()) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    /** 正文里的 @xxx（微信窄空格后常见） */
+    private static final Pattern AT_TOKEN = Pattern.compile("[@＠]\\s*([^\\s@＠]{1,40})");
+
+    /**
+     * 是否在跟别人说话（没点名机器人）：
+     * <ol>
+     *   <li>{@code atuserlist} 里有别人、没有机器人</li>
+     *   <li>正文/预览里 @ 了别人昵称，且没有 @ 机器人</li>
+     * </ol>
+     * 若已明确 @ 机器人，返回 false（可同时 @ 多人）。
+     */
+    public static boolean isTalkingToOthersOnly(List<String> mentionIds,
+                                                String content,
+                                                String pushContent,
+                                                String botWechatId,
+                                                String botWechatName) {
+        // 已点名机器人（含「@了你」、正文 @昵称、atuserlist）→ 不是「只跟别人说」
+        boolean botHit = atuserListHasBot(mentionIds, botWechatId)
+                || textAtsBot(content, botWechatId, botWechatName)
+                || textAtsBot(pushContent, botWechatId, botWechatName)
+                || containsAtYouHint(content, pushContent);
+        if (botHit) {
+            return false;
+        }
+        if (isAddressedToOthersOnly(mentionIds, botWechatId)) {
+            return true;
+        }
+        return textAtsOthersOnly(content, botWechatId, botWechatName)
+                || textAtsOthersOnly(pushContent, botWechatId, botWechatName);
+    }
+
+    /**
+     * 是否「点名了别人、却没点名机器人」（仅看 atuserlist）。
+     */
+    public static boolean isAddressedToOthersOnly(List<String> mentionIds, String botWechatId) {
+        if (mentionIds == null || mentionIds.isEmpty()) {
+            return false;
+        }
+        String botId = trim(botWechatId);
+        boolean botMentioned = false;
+        boolean others = false;
+        for (String id : mentionIds) {
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            if (!botId.isEmpty() && id.equalsIgnoreCase(botId)) {
+                botMentioned = true;
+            } else {
+                others = true;
+            }
+        }
+        return others && !botMentioned;
+    }
+
+    private static boolean atuserListHasBot(List<String> mentionIds, String botWechatId) {
+        String botId = trim(botWechatId);
+        if (botId.isEmpty() || mentionIds == null) {
+            return false;
+        }
+        for (String id : mentionIds) {
+            if (id != null && id.equalsIgnoreCase(botId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsAtYouHint(String content, String pushContent) {
+        String rawPush = pushContent == null ? "" : pushContent;
+        String rawContent = content == null ? "" : content;
+        return rawPush.contains("在群聊中@了你") || rawPush.contains("@了你")
+                || rawContent.contains("在群聊中@了你") || rawContent.contains("@了你");
+    }
+
+    private static boolean textAtsBot(String text, String botWechatId, String botWechatName) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String botId = trim(botWechatId);
+        String botName = trim(botWechatName);
+        Matcher matcher = AT_TOKEN.matcher(text);
+        while (matcher.find()) {
+            String token = cleanAtToken(matcher.group(1));
+            if (token.isEmpty()) {
+                continue;
+            }
+            if (!botId.isEmpty() && token.equalsIgnoreCase(botId)) {
+                return true;
+            }
+            if (!botName.isEmpty() && (token.equals(botName) || normalizeForMatch(token).equals(normalizeForMatch(botName)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 正文 @ 了非机器人对象，且没 @ 机器人。 */
+    private static boolean textAtsOthersOnly(String text, String botWechatId, String botWechatName) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String botId = trim(botWechatId);
+        String botName = trim(botWechatName);
+        boolean others = false;
+        boolean bot = false;
+        Matcher matcher = AT_TOKEN.matcher(text);
+        while (matcher.find()) {
+            String token = cleanAtToken(matcher.group(1));
+            if (token.isEmpty() || "所有人".equals(token) || "all".equalsIgnoreCase(token)) {
+                continue;
+            }
+            boolean isBot = (!botId.isEmpty() && token.equalsIgnoreCase(botId))
+                    || (!botName.isEmpty() && (token.equals(botName)
+                    || normalizeForMatch(token).equals(normalizeForMatch(botName))));
+            if (isBot) {
+                bot = true;
+            } else {
+                others = true;
+            }
+        }
+        return others && !bot;
+    }
+
+    private static String cleanAtToken(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String token = WECHAT_NOISE.matcher(raw.trim()).replaceAll("");
+        return token.replaceAll("[，,。.!！？?、:：；;]+$", "").trim();
+    }
+
+    /**
+     * 从 msg_source 的 {@code <atuserlist>} 提取被 @ 的 wxid 列表（去重保序）。
+     */
+    public static List<String> extractMentionIds(String msgSource) {
+        if (msgSource == null || msgSource.isBlank()) {
+            return List.of();
+        }
+        String decoded = decodeXml(msgSource);
+        Set<String> ids = new LinkedHashSet<>();
+        Matcher matcher = AT_USER_LIST.matcher(decoded);
+        while (matcher.find()) {
+            String body = matcher.group(1) == null ? "" : matcher.group(1);
+            body = body.replace("<![CDATA[", "").replace("]]>", "");
+            for (String part : body.split("[\\n,;，；\\s]+")) {
+                String id = part.trim();
+                if (!id.isEmpty() && !"notify@all".equalsIgnoreCase(id)) {
+                    ids.add(id);
+                }
+            }
+        }
+        return ids.isEmpty() ? List.of() : List.copyOf(new ArrayList<>(ids));
     }
 
     /**

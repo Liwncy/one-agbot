@@ -40,9 +40,10 @@ final class AgentMediaLoader {
             return null;
         }
         String type = MsgType.normalize(msgType);
-        // 视频封面若被解析成 image/jpeg，也允许挂 IMAGE
+        // 视频封面若被解析成 image/jpeg，也允许挂 IMAGE；文本引用图同理
         boolean allow = IMAGE_TYPES.contains(type)
-                || (MsgType.VIDEO.equals(type) && isImageMime(media.mime()));
+                || (MsgType.VIDEO.equals(type) && isImageMime(firstNonBlank(media.mime(), "image/jpeg")))
+                || (MsgType.TEXT.equals(type) && isImageMime(firstNonBlank(media.mime(), "image/jpeg")));
         if (!allow) {
             return null;
         }
