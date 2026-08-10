@@ -1,0 +1,8 @@
+# 复制为 application-local.yml 后填写（application-local.yml 已 gitignore，勿提交）
+spring:
+  data:
+    redis:
+      password: your-redis-password
+
+snail-ai:
+  token: your-snail-ai-token

@@ -37,7 +37,17 @@ mvn -pl one-extend/one-snailai-server -am spring-boot:run
 
 默认 `spring.profiles.active=dev`，短期记忆 `snail-ai.memory.short-term.store-type=db`。
 
-3. 修改 `one-boot/src/main/resources/application.yml` 中 `snail-ai.app-id` / `token`，以及 `agbot.agent.default-agent-id`（配置风格对齐 RuoYi）。
+3. 配置密钥（不要写进可提交的 yml）：
+
+```bash
+# 复制本地覆盖文件
+cp one-boot/src/main/resources/application-local.yml.example \
+   one-boot/src/main/resources/application-local.yml
+# 编辑填入 Redis 密码、snail-ai.token
+```
+
+也可用环境变量：`REDIS_PASSWORD`、`SNAIL_AI_TOKEN`。  
+`agbot.agent.default-agent-id` 等非密钥项仍在 `application.yml`。
 
 4. 启动网关：
 

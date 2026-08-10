@@ -13,6 +13,7 @@ target/
 *.log
 upload/
 data/
+**/application-local.yml
 .flattened-pom.xml
 **/dependency-reduced-pom.xml
 .DS_Store
