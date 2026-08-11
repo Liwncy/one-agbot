@@ -76,6 +76,8 @@ final class AgentMediaLoader {
             case URL -> {
                 HttpRequest request = HttpRequest.newBuilder(URI.create(media.path()))
                         .timeout(Duration.ofSeconds(30))
+                        .header("User-Agent", "Mozilla/5.0")
+                        .header("Referer", "https://wx.qq.com/")
                         .GET()
                         .build();
                 HttpResponse<byte[]> response = HTTP.send(request, HttpResponse.BodyHandlers.ofByteArray());
@@ -103,6 +105,9 @@ final class AgentMediaLoader {
         }
         if (bytes.length >= 8 && bytes[0] == (byte) 0x89 && bytes[1] == 0x50) {
             return "image/png";
+        }
+        if (bytes.length >= 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+            return "image/gif";
         }
         if (bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F') {
             return "image/webp";

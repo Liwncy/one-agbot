@@ -327,12 +327,12 @@ public final class GolemMessageParser {
             }
             case MsgType.EMOJI -> {
                 attachEmojiFields(bodyXml, extra);
-                String path = firstNonBlank(
+                String path = decodeMediaUrl(firstNonBlank(
                         xmlAttr(bodyXml, "cdnurl"),
                         xmlAttr(bodyXml, "encrypturl"),
                         xmlAttr(bodyXml, "externurl"),
                         xmlAttr(bodyXml, "thumburl"),
-                        xmlAttr(bodyXml, "emoji_url"));
+                        xmlAttr(bodyXml, "emoji_url")));
                 String resolved = blankToNull(path);
                 if (resolved != null) {
                     resolved = mediaRefOfLocator(resolved).applyToExtra(extra);
@@ -649,12 +649,12 @@ public final class GolemMessageParser {
             }
             case "47" -> {
                 attachEmojiFields(content, extra);
-                String path = firstNonBlank(
+                String path = decodeMediaUrl(firstNonBlank(
                         xmlAttr(content, "cdnurl"),
                         xmlAttr(content, "encrypturl"),
                         xmlAttr(content, "externurl"),
                         xmlAttr(content, "thumburl"),
-                        xmlAttr(content, "emoji_url"));
+                        xmlAttr(content, "emoji_url")));
                 if (path.isBlank()) {
                     yield null;
                 }
@@ -1004,6 +1004,19 @@ public final class GolemMessageParser {
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
                 .trim();
+    }
+
+    /** 表情/图片 CDN 地址：解 XML 实体，并去掉多余空白。 */
+    private static String decodeMediaUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String once = decodeXml(raw.trim());
+        // 嵌套实体：&amp;amp; → &amp; → &
+        if (once.contains("&amp;") || once.contains("&lt;")) {
+            once = decodeXml(once);
+        }
+        return once.replace(" ", "").trim();
     }
 
     private static void putIfPresent(Map<String, Object> extra, String key, String value) {

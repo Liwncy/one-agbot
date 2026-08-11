@@ -79,9 +79,15 @@ public class SnailAiAgentBridge implements AgentBridge {
                     input.hasUsableMedia());
         }
 
-        String content = imageIds.isEmpty()
-                ? AgentMessageFormatter.toUserMessage(msgInfo)
-                : firstNonBlank(input.content(), AgentMessageFormatter.withSpeaker(msgInfo, "请看这张图片"));
+        // 正文只用可读摘要；媒体失败时不要把 URL/form/platformId 塞进对话（模型会当成「一串代码」）
+        String content = firstNonBlank(
+                input.content(),
+                AgentMessageFormatter.withSpeaker(msgInfo,
+                        imageIds.isEmpty() ? "（附件没带上，按文字聊）" : "请看这张图片"));
+        if (imageIds.isEmpty() && input.hasMedia()) {
+            log.warn("Agent chat without attachment after media present type={} media={}",
+                    input.msgType(), mediaSummary(input));
+        }
         log.info("Agent chat openId={} conversationId={} userId={} userName={} groupId={} msgType={} attachments={} media={} content={}",
                 openId, conversationId, msgInfo.userId(), msgInfo.userName(), msgInfo.groupId(),
                 input.msgType(), imageIds.size(), mediaSummary(input), preview(content));

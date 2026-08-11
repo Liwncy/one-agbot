@@ -3,14 +3,20 @@ package me.liwncy.agbot.adapter.golem.inbound;
 import me.liwncy.agbot.adapter.golem.GolemProperties;
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
+import me.liwncy.agbot.kernel.api.message.MediaForm;
 import me.liwncy.agbot.kernel.api.message.MediaRef;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +27,11 @@ import java.util.UUID;
  */
 public class GolemMediaResolver {
     private static final Logger log = LoggerFactory.getLogger(GolemMediaResolver.class);
+
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
 
     private final GolemApiClient apiClient;
     private final GolemProperties properties;
@@ -34,20 +45,23 @@ public class GolemMediaResolver {
         if (msg == null || !properties.isMediaResolveEnabled()) {
             return msg;
         }
-        // 引用图/视频等：顶层 msgType 常为 TEXT，按 quoteMsgType 走下载
+        // 引用图/视频/表情：顶层 msgType 常为 TEXT，按 quoteMsgType 走下载
         String type = effectiveMediaType(msg);
         if (!isMediaType(type)) {
             return msg;
         }
         MediaRef current = MediaRef.fromMsg(msg);
-        if (current != null && current.usableForFetch()) {
+        // FILE/BASE64 已可用；微信/QQ 表情 CDN 的 URL 往往防盗链，Agent 直拉会失败 → 适配器落盘
+        if (current != null && current.usableForFetch()
+                && !(current.form() == MediaForm.URL && needsLocalMaterialize(current.path(), type))) {
             return msg;
         }
         try {
             ResolvedMedia resolved = download(msg, type, current);
             if (resolved == null || resolved.bytes() == null || resolved.bytes().length == 0) {
-                log.warn("Golem media resolve empty type={} quoteType={} msgId={}",
-                        msg.msgType(), type, msg.msgId());
+                log.warn("Golem media resolve empty type={} quoteType={} msgId={} locator={}",
+                        msg.msgType(), type, msg.msgId(),
+                        preview(current == null ? msg.path() : firstNonBlank(current.path(), current.platformId())));
                 return msg;
             }
             return rewrite(msg, resolved);
@@ -61,18 +75,40 @@ public class GolemMediaResolver {
     private ResolvedMedia download(MsgInfo msg, String type, MediaRef current) {
         Map<String, Object> extra = msg.extra() == null ? Map.of() : msg.extra();
         String aesKey = string(extra.get("aeskey"));
+        String httpUrl = firstNonBlank(
+                current != null && current.form() == MediaForm.URL ? current.path() : null,
+                looksLikeHttp(msg.path()) ? msg.path() : null,
+                looksLikeHttp(string(extra.get(ChannelExtraKeys.MEDIA_URL)))
+                        ? string(extra.get(ChannelExtraKeys.MEDIA_URL)) : null
+        );
         String cdnId = firstNonBlank(
                 current == null ? null : current.platformId(),
-                current == null ? null : current.path(),
-                msg.path(),
-                string(extra.get(ChannelExtraKeys.MEDIA_PLATFORM_ID)),
-                string(extra.get(ChannelExtraKeys.MEDIA_URL))
+                current != null && current.form() != MediaForm.URL ? current.path() : null,
+                !looksLikeHttp(msg.path()) ? msg.path() : null,
+                string(extra.get(ChannelExtraKeys.MEDIA_PLATFORM_ID))
         );
+        // MD5 不能当 CDN id 下载
+        if (!cdnId.isBlank() && cdnId.equalsIgnoreCase(string(extra.get(ChannelExtraKeys.MD5)))) {
+            cdnId = "";
+        }
         String thumb = string(extra.get(ChannelExtraKeys.THUMB));
         String thumbAes = firstNonBlank(string(extra.get("thumbAeskey")), aesKey);
 
-        // 1) CDN 下载（图/视频）——引用消息主要靠这条（外层 msgId 不是原图 id）
-        if (!cdnId.isBlank() && !aesKey.isBlank()) {
+        // 0) 表情/图片 HTTP 直链（含引用表情 cdnurl）——先落到本地，避免 Agent 被防盗链拦
+        if (!httpUrl.isBlank() && (MsgType.EMOJI.equals(type) || MsgType.IMAGE.equals(type))) {
+            try {
+                byte[] bytes = httpDownload(httpUrl);
+                if (bytes != null && bytes.length > 0) {
+                    String mime = sniffImageMime(bytes, string(extra.get(ChannelExtraKeys.MEDIA_MIME)));
+                    return new ResolvedMedia(bytes, guessExt(type, mime), mime);
+                }
+            } catch (Exception e) {
+                log.debug("HTTP media download failed url={}: {}", preview(httpUrl), e.getMessage());
+            }
+        }
+
+        // 1) Golem CDN 下载（图/视频/表情）——引用消息主要靠 aeskey + 非 http 的 id
+        if (!cdnId.isBlank() && !aesKey.isBlank() && !looksLikeHttp(cdnId)) {
             try {
                 byte[] bytes = switch (type) {
                     case MsgType.IMAGE, MsgType.EMOJI -> apiClient.cdnDownloadImage(cdnId, aesKey);
@@ -126,6 +162,73 @@ public class GolemMediaResolver {
             }
         }
         return null;
+    }
+
+    /** 微信/QQ 表情图床对服务端直拉常 403，需在适配器侧落盘后再给 Agent。 */
+    private static boolean needsLocalMaterialize(String url, String type) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        if (!MsgType.EMOJI.equals(type) && !MsgType.IMAGE.equals(type)) {
+            return false;
+        }
+        String u = url.toLowerCase(Locale.ROOT);
+        return u.contains("qpic.cn")
+                || u.contains("qq.com")
+                || u.contains("weixin.qq.com")
+                || u.contains("wx.qlogo.cn")
+                || u.contains("vweixinf")
+                || u.contains("emoji");
+    }
+
+    private static byte[] httpDownload(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url.trim()))
+                .timeout(Duration.ofSeconds(30))
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Referer", "https://wx.qq.com/")
+                .GET()
+                .build();
+        HttpResponse<byte[]> response = HTTP.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("HTTP " + response.statusCode());
+        }
+        return response.body();
+    }
+
+    private static String sniffImageMime(byte[] bytes, String fallback) {
+        if (bytes != null && bytes.length >= 3
+                && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+            return "image/jpeg";
+        }
+        if (bytes != null && bytes.length >= 8
+                && bytes[0] == (byte) 0x89 && bytes[1] == 0x50) {
+            return "image/png";
+        }
+        if (bytes != null && bytes.length >= 6
+                && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+            return "image/gif";
+        }
+        if (bytes != null && bytes.length >= 12
+                && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F') {
+            return "image/webp";
+        }
+        return firstNonBlank(fallback, "image/jpeg");
+    }
+
+    private static boolean looksLikeHttp(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    private static String preview(String value) {
+        if (value == null) {
+            return "";
+        }
+        String text = value.replace('\n', ' ').trim();
+        return text.length() <= 120 ? text : text.substring(0, 120) + "...";
     }
 
     /** 顶层类型或引用媒体类型。 */
