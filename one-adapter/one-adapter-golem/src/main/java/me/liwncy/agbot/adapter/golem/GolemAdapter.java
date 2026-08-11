@@ -116,7 +116,7 @@ public class GolemAdapter implements ChatAdapter {
         Map<String, Object> extra = replyInfo.extra() == null ? Map.of() : replyInfo.extra();
         String path = firstNonBlank(replyInfo.path(), replyInfo.msg());
         String msgId = switch (type) {
-            case MsgType.TEXT -> sendTextMaybeAsImages(receiver, replyInfo.msg(), replyInfo.remind());
+            case MsgType.TEXT -> sendTextMaybeAsMedia(receiver, replyInfo.msg(), replyInfo.remind());
             case MsgType.IMAGE -> sendImageOrFallback(receiver, path);
             case MsgType.VIDEO -> apiClient.sendVideo(
                     receiver, path,
@@ -175,26 +175,40 @@ public class GolemAdapter implements ChatAdapter {
     }
 
     /**
-     * Agent 常把画图结果以文字 URL 返回；识别后改走图片消息，避免微信文本截断长链。
+     * Agent 常把媒体结果以文字 URL 返回；识别后改走图片/视频消息，避免微信文本截断长链。
      */
-    private String sendTextMaybeAsImages(String receiver, String content, String remind) {
-        OutboundImageLinks.Split split = OutboundImageLinks.split(content);
-        if (!split.hasImages()) {
+    private String sendTextMaybeAsMedia(String receiver, String content, String remind) {
+        OutboundImageLinks.Split images = OutboundImageLinks.split(content);
+        OutboundVideoLinks.Split videos = OutboundVideoLinks.split(
+                images.hasImages() ? images.remainingText() : content);
+        if (!images.hasImages() && !videos.hasVideos()) {
             return apiClient.sendText(receiver, content, remind);
         }
 
         String lastMsgId = "";
-        String caption = split.remainingText();
+        String caption = videos.hasVideos() ? videos.remainingText() : images.remainingText();
         if (caption != null && !caption.isBlank()) {
             lastMsgId = apiClient.sendText(receiver, caption, remind);
         }
-        for (String imageUrl : split.imageUrls()) {
-            try {
-                lastMsgId = apiClient.sendImage(receiver, imageUrl);
-            } catch (Exception e) {
-                log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
-                // 图片拉失败时退回发链接，至少还能点开短链
-                lastMsgId = apiClient.sendText(receiver, imageUrl, null);
+        if (images.hasImages()) {
+            for (String imageUrl : images.imageUrls()) {
+                try {
+                    lastMsgId = apiClient.sendImage(receiver, imageUrl);
+                } catch (Exception e) {
+                    log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
+                    lastMsgId = apiClient.sendText(receiver, imageUrl, null);
+                }
+            }
+        }
+        if (videos.hasVideos()) {
+            for (String videoUrl : videos.videoUrls()) {
+                try {
+                    lastMsgId = apiClient.sendVideo(receiver, videoUrl, null, null);
+                } catch (Exception e) {
+                    log.warn("Golem sendVideo failed url={} err={}", preview(videoUrl), e.toString());
+                    // 勿再走文本媒体识别，否则会二次 sendVideo；降级为链接卡片
+                    lastMsgId = apiClient.sendLink(receiver, "视频", "点开看看", videoUrl, null);
+                }
             }
         }
         return lastMsgId;

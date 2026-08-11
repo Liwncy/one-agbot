@@ -6,11 +6,17 @@ import me.liwncy.agbot.common.core.exception.ServiceException;
 import me.liwncy.agbot.common.json.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,6 +26,8 @@ import java.util.Map;
  */
 public class GolemApiClient {
     private static final Logger log = LoggerFactory.getLogger(GolemApiClient.class);
+    /** Golem 发视频时 thumb / thumb_url 必填其一；无封面时用占位 JPEG。 */
+    private static final byte[] DEFAULT_VIDEO_THUMB_JPEG = buildDefaultVideoThumbJpeg();
 
     private final RestClient restClient;
 
@@ -61,8 +69,19 @@ public class GolemApiClient {
         MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
         form.add("receiver", receiver);
         form.add("video_url", videoUrl == null ? "" : videoUrl);
-        form.add("thumb_url", thumbUrl == null ? "" : thumbUrl);
         form.add("duration", duration == null || duration.isBlank() ? "10" : duration);
+        String thumb = thumbUrl == null ? "" : thumbUrl.trim();
+        if (!thumb.isBlank()) {
+            form.add("thumb_url", thumb);
+        } else {
+            // 协议侧要求 thumb 文件与 thumb_url 不能同时为空
+            form.add("thumb", new ByteArrayResource(DEFAULT_VIDEO_THUMB_JPEG) {
+                @Override
+                public String getFilename() {
+                    return "thumb.jpg";
+                }
+            });
+        }
         JsonNode root = postForm("/api/message/video", form);
         assertOk(root, "sendVideo");
         return packMsgId(root.path("data"), receiver);
@@ -363,6 +382,27 @@ public class GolemApiClient {
             }
         }
         return "";
+    }
+
+    private static byte[] buildDefaultVideoThumbJpeg() {
+        try {
+            BufferedImage image = new BufferedImage(180, 320, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = image.createGraphics();
+            g.setColor(new Color(0x2B2B2B));
+            g.fillRect(0, 0, 180, 320);
+            g.setColor(new Color(0x888888));
+            g.fillOval(60, 120, 60, 60);
+            g.dispose();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            if (!ImageIO.write(image, "jpg", out)) {
+                throw new IllegalStateException("ImageIO cannot write jpg");
+            }
+            return out.toByteArray();
+        } catch (Exception e) {
+            // 极小合法 JPEG（1x1），兜底避免类加载失败
+            return Base64.getDecoder().decode(
+                    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=");
+        }
     }
 
     private static long parseLong(String raw) {

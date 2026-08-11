@@ -194,6 +194,10 @@ public class SnailAiAgentBridge implements AgentBridge {
             pushImageOrFallback(runtime, msgInfo, trimmed);
             return;
         }
+        if (AgentOutboundVideos.looksLikeVideoUrl(trimmed)) {
+            pushVideoOrFallback(runtime, msgInfo, trimmed);
+            return;
+        }
         pushText(runtime, msgInfo, part, true);
     }
 
@@ -213,6 +217,29 @@ public class SnailAiAgentBridge implements AgentBridge {
             log.warn("Agent stream sendImage failed, fallback text userId={} url={} err={}",
                     msgInfo.userId(), preview(imageUrl, 160), e.toString());
             pushText(runtime, msgInfo, imageUrl, false);
+        }
+    }
+
+    private void pushVideoOrFallback(AdapterRuntime runtime, MsgInfo msgInfo, String videoUrl) {
+        ReplyInfo merged = ReplyInfo.merge(ReplyInfo.video(videoUrl, msgInfo), msgInfo);
+        try {
+            runtime.push(msgInfo.platform(), merged).join();
+            log.info("Agent stream push type=video userId={} preview={}",
+                    msgInfo.userId(), preview(videoUrl, 160));
+        } catch (Exception e) {
+            log.warn("Agent stream sendVideo failed, fallback link userId={} url={} err={}",
+                    msgInfo.userId(), preview(videoUrl, 160), e.toString());
+            // 勿再 push 纯文本 URL：Golem 文本分支会再次识别成视频，形成二次失败
+            ReplyInfo link = ReplyInfo.merge(
+                    ReplyInfo.link("视频", "点开看看", videoUrl, msgInfo), msgInfo);
+            try {
+                runtime.push(msgInfo.platform(), link).join();
+                log.info("Agent stream push type=link(fallback) userId={} preview={}",
+                        msgInfo.userId(), preview(videoUrl, 160));
+            } catch (Exception linkErr) {
+                log.warn("Agent stream video link fallback failed userId={} err={}",
+                        msgInfo.userId(), linkErr.toString());
+            }
         }
     }
 

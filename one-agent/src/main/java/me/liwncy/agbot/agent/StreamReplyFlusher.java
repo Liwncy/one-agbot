@@ -7,11 +7,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 缓冲流式文本，在段落 / 完整图片 URL / 句号边界切分后回调。
+ * 缓冲流式文本，在段落 / 完整图片或视频 URL / 句号边界切分后回调。
  */
 final class StreamReplyFlusher {
     private static final Pattern TRAILING_URL = Pattern.compile("https?://\\S+$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern IMAGE_URL = Pattern.compile(
+    private static final Pattern MEDIA_URL = Pattern.compile(
             "https?://[^\\s<>\"'\\]\\)\\u4e00-\\u9fff]+",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern SENTENCE_END = Pattern.compile("[。！？!?\\n]");
@@ -65,9 +65,8 @@ final class StreamReplyFlusher {
 
     private int findCut(String text, boolean forceBoundary) {
         if (hasIncompleteTrailingUrl(text) && !forceBoundary) {
-            // 仅当中间已有可独立发出的完整图链时切开
-            int imageCut = cutAfterCompleteImageUrl(text, false);
-            return imageCut;
+            // 仅当中间已有可独立发出的完整媒体链时切开
+            return cutAfterCompleteMediaUrl(text, false);
         }
 
         int para = text.indexOf("\n\n");
@@ -82,9 +81,9 @@ final class StreamReplyFlusher {
             }
         }
 
-        int imageCut = cutAfterCompleteImageUrl(text, true);
-        if (imageCut > 0) {
-            return imageCut;
+        int mediaCut = cutAfterCompleteMediaUrl(text, true);
+        if (mediaCut > 0) {
+            return mediaCut;
         }
 
         if (text.trim().length() < minChars && !forceBoundary) {
@@ -106,12 +105,13 @@ final class StreamReplyFlusher {
         return last;
     }
 
-    private int cutAfterCompleteImageUrl(String text, boolean allowAtEnd) {
-        Matcher m = IMAGE_URL.matcher(text);
+    private int cutAfterCompleteMediaUrl(String text, boolean allowAtEnd) {
+        Matcher m = MEDIA_URL.matcher(text);
         int cut = -1;
         while (m.find()) {
             String url = m.group();
-            boolean complete = AgentOutboundImages.looksCompleteImageUrl(url);
+            boolean complete = AgentOutboundImages.looksCompleteImageUrl(url)
+                    || AgentOutboundVideos.looksCompleteVideoUrl(url);
             boolean followed = m.end() < text.length() && isUrlTerminator(text.charAt(m.end()));
             if (complete && (followed || (allowAtEnd && m.end() == text.length()))) {
                 cut = m.end();
@@ -131,11 +131,18 @@ final class StreamReplyFlusher {
             return false;
         }
         String url = m.group();
-        return !AgentOutboundImages.looksCompleteImageUrl(url);
+        if (AgentOutboundImages.looksLikeImageUrl(url)) {
+            return !AgentOutboundImages.looksCompleteImageUrl(url);
+        }
+        if (AgentOutboundVideos.looksLikeVideoUrl(url)) {
+            return !AgentOutboundVideos.looksCompleteVideoUrl(url);
+        }
+        // 未知 http(s) 链仍在流式拼接中
+        return true;
     }
 
     private void emit(String part) {
-        List<String> pieces = splitKeepImages(part);
+        List<String> pieces = splitKeepMedia(part);
         for (String piece : pieces) {
             if (piece != null && !piece.isBlank()) {
                 emitter.accept(piece);
@@ -143,17 +150,25 @@ final class StreamReplyFlusher {
         }
     }
 
-    /** 有图时尽量「配文 / 图」分开回调，便于通道分别发送。 */
-    private static List<String> splitKeepImages(String part) {
-        AgentOutboundImages.Split split = AgentOutboundImages.split(part);
-        if (!split.hasImages()) {
+    /** 有图/视频时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
+    private static List<String> splitKeepMedia(String part) {
+        AgentOutboundImages.Split images = AgentOutboundImages.split(part);
+        AgentOutboundVideos.Split videos = AgentOutboundVideos.split(
+                images.hasImages() ? images.remainingText() : part);
+        if (!images.hasImages() && !videos.hasVideos()) {
             return List.of(part);
         }
         List<String> out = new ArrayList<>();
-        if (split.remainingText() != null && !split.remainingText().isBlank()) {
-            out.add(split.remainingText());
+        String caption = videos.hasVideos() ? videos.remainingText() : images.remainingText();
+        if (caption != null && !caption.isBlank()) {
+            out.add(caption);
         }
-        out.addAll(split.imageUrls());
+        if (images.hasImages()) {
+            out.addAll(images.imageUrls());
+        }
+        if (videos.hasVideos()) {
+            out.addAll(videos.videoUrls());
+        }
         return out;
     }
 }
