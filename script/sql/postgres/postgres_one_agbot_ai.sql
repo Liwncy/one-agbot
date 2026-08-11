@@ -545,7 +545,7 @@ CREATE TABLE IF NOT EXISTS sai_mcp_server
     command VARCHAR(1024),
     args TEXT,
     env_vars TEXT,
-    timeout BIGINT DEFAULT 60000,
+    timeout BIGINT DEFAULT 180000,
     headers TEXT,
     last_connect_dt TIMESTAMP NULL,
     creator_id BIGINT,

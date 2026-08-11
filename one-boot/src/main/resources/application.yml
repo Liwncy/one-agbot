@@ -77,7 +77,8 @@ snail-ai:
     https: false
     prefix: snail-ai
     connect-timeout-ms: 5000
-    read-timeout-ms: 60000
+    # 同步 OpenAPI 读超时；含 MCP 画图等慢工具时需大于 sai_mcp_server.timeout
+    read-timeout-ms: 180000
     chat-timeout-ms: 300000
 
 logging:

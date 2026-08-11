@@ -371,7 +371,7 @@ CREATE TABLE IF NOT EXISTS sai_mcp_server
     command          VARCHAR(1024) COMMENT 'Stdio命令(Stdio时必填)',
     args             TEXT          COMMENT 'Stdio命令参数(JSON数组)',
     env_vars         TEXT          COMMENT 'Stdio环境变量(JSON对象)',
-    timeout          BIGINT        DEFAULT 60000 COMMENT '超时时间(毫秒)',
+    timeout          BIGINT        DEFAULT 180000 COMMENT '超时时间(毫秒)',
     headers          TEXT          COMMENT '请求头(JSON对象)',
     last_connect_dt  TIMESTAMP NULL COMMENT '最后连接时间',
     creator_id       BIGINT        COMMENT '创建者用户ID',
