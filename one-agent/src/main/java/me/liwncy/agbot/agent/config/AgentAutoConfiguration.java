@@ -7,7 +7,9 @@ import com.aizuda.snail.ai.openapi.client.starter.SnailAiOpenApiAutoConfiguratio
 import me.liwncy.agbot.agent.SnailAiAgentBridge;
 import me.liwncy.agbot.agent.SnailAiOpenApiClient;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
+import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,7 +38,8 @@ public class AgentAutoConfiguration {
     @ConditionalOnMissingBean(AgentBridge.class)
     public AgentBridge agentBridge(SnailAiOpenApiClient client,
                                    ConversationMapper conversationMapper,
-                                   AgbotAgentProperties properties) {
-        return new SnailAiAgentBridge(client, conversationMapper, properties);
+                                   AgbotAgentProperties properties,
+                                   ObjectProvider<AdapterRuntime> runtimeProvider) {
+        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider);
     }
 }

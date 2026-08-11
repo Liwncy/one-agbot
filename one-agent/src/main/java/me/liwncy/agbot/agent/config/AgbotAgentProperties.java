@@ -11,6 +11,12 @@ public class AgbotAgentProperties {
     private boolean enabled = true;
     private long defaultAgentId = 1L;
     private boolean asyncHandled;
+    /** 使用 OpenAPI chatStream，按段落/图片边界分多条推送。 */
+    private boolean streamReply = true;
+    /** 流式分片的最小字数（图链不受限）。 */
+    private int streamMinChars = 16;
+    /** 流式对话阻塞上限（毫秒），宜 ≥ snail-ai.open-api.chat-timeout-ms。 */
+    private long streamTimeoutMs = 300_000L;
 
     public boolean isEnabled() {
         return enabled;
@@ -34,5 +40,29 @@ public class AgbotAgentProperties {
 
     public void setAsyncHandled(boolean asyncHandled) {
         this.asyncHandled = asyncHandled;
+    }
+
+    public boolean isStreamReply() {
+        return streamReply;
+    }
+
+    public void setStreamReply(boolean streamReply) {
+        this.streamReply = streamReply;
+    }
+
+    public int getStreamMinChars() {
+        return streamMinChars;
+    }
+
+    public void setStreamMinChars(int streamMinChars) {
+        this.streamMinChars = streamMinChars;
+    }
+
+    public long getStreamTimeoutMs() {
+        return streamTimeoutMs;
+    }
+
+    public void setStreamTimeoutMs(long streamTimeoutMs) {
+        this.streamTimeoutMs = streamTimeoutMs;
     }
 }

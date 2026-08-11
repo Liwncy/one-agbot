@@ -29,6 +29,10 @@ agbot:
     enabled: true
     default-agent-id: 1
     async-handled: false
+    # 流式分片推送：段落/句号/图片链接边界各发一条（false 则仍 sync 整段回）
+    stream-reply: true
+    stream-min-chars: 16
+    stream-timeout-ms: 300000
   adapter:
     golem:
       # 取值对齐 xchatbot wrangler.toml（WECHAT_* / BOT_*）

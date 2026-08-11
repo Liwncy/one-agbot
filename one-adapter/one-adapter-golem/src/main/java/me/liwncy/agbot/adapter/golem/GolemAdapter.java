@@ -116,8 +116,8 @@ public class GolemAdapter implements ChatAdapter {
         Map<String, Object> extra = replyInfo.extra() == null ? Map.of() : replyInfo.extra();
         String path = firstNonBlank(replyInfo.path(), replyInfo.msg());
         String msgId = switch (type) {
-            case MsgType.TEXT -> apiClient.sendText(receiver, replyInfo.msg(), replyInfo.remind());
-            case MsgType.IMAGE -> apiClient.sendImage(receiver, path);
+            case MsgType.TEXT -> sendTextMaybeAsImages(receiver, replyInfo.msg(), replyInfo.remind());
+            case MsgType.IMAGE -> sendImageOrFallback(receiver, path);
             case MsgType.VIDEO -> apiClient.sendVideo(
                     receiver, path,
                     stringExtra(extra, ChannelExtraKeys.THUMB),
@@ -163,6 +163,48 @@ public class GolemAdapter implements ChatAdapter {
         };
         log.debug("Golem sent type={} receiver={} msgId={}", type, receiver, msgId);
         return msgId;
+    }
+
+    private String sendImageOrFallback(String receiver, String imageUrl) {
+        try {
+            return apiClient.sendImage(receiver, imageUrl);
+        } catch (Exception e) {
+            log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
+            return apiClient.sendText(receiver, imageUrl == null ? "" : imageUrl, null);
+        }
+    }
+
+    /**
+     * Agent 常把画图结果以文字 URL 返回；识别后改走图片消息，避免微信文本截断长链。
+     */
+    private String sendTextMaybeAsImages(String receiver, String content, String remind) {
+        OutboundImageLinks.Split split = OutboundImageLinks.split(content);
+        if (!split.hasImages()) {
+            return apiClient.sendText(receiver, content, remind);
+        }
+
+        String lastMsgId = "";
+        String caption = split.remainingText();
+        if (caption != null && !caption.isBlank()) {
+            lastMsgId = apiClient.sendText(receiver, caption, remind);
+        }
+        for (String imageUrl : split.imageUrls()) {
+            try {
+                lastMsgId = apiClient.sendImage(receiver, imageUrl);
+            } catch (Exception e) {
+                log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
+                // 图片拉失败时退回发链接，至少还能点开短链
+                lastMsgId = apiClient.sendText(receiver, imageUrl, null);
+            }
+        }
+        return lastMsgId;
+    }
+
+    private static String preview(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= 120 ? value : value.substring(0, 117) + "...";
     }
 
     private static String resolveReceiver(ReplyInfo replyInfo) {
