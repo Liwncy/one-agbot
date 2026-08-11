@@ -81,10 +81,10 @@ public record GolemGroupSettings(
         StringBuilder sb = new StringBuilder();
         sb.append("模式「").append(mode.label()).append("」——").append(mode.tip());
         sb.append("；").append(followUpLabel());
-        if (mode == GolemGroupRespondMode.RANDOM) {
+        if (mode == GolemGroupRespondMode.RANDOM || mode == GolemGroupRespondMode.SMART) {
             sb.append("；").append(chanceLabel());
         }
-        if (mode == GolemGroupRespondMode.RULE) {
+        if (mode == GolemGroupRespondMode.RULE || mode == GolemGroupRespondMode.SMART) {
             sb.append("；").append(rule().summary());
         }
         return sb.toString();

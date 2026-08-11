@@ -71,7 +71,7 @@ public class GolemSessionCommandHandler {
                 if (!msg.isPrivateChat()) {
                     // 首次开启写入默认群配置：点名 + 跟聊关
                     respondPolicy.ensureDefaults(msg.accountId(), msg.groupId());
-                    reply(receiver, "好了，这个群继续聊；" + groupModeCommandHandler.statusLine(msg));
+                    reply(receiver, "好了，这个群继续聊");
                 } else {
                     reply(receiver, "好了，来聊吧");
                 }
@@ -91,8 +91,8 @@ public class GolemSessionCommandHandler {
                 } else {
                     String modeLine = groupModeCommandHandler.statusLine(msg);
                     reply(receiver, on
-                            ? ("这个群开着呢；" + modeLine)
-                            : ("这个群歇着呢；" + modeLine + "（先「开始」再聊）"));
+                            ? ("开着呢；" + modeLine)
+                            : ("歇着呢；" + modeLine));
                 }
                 yield true;
             }

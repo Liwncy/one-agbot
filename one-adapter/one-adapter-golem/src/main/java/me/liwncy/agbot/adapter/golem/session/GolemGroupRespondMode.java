@@ -17,7 +17,7 @@ public enum GolemGroupRespondMode {
     RULE,
     /** 按概率随机插话（「跟别人说话」仍不接） */
     RANDOM,
-    /** 智能：暂未定细则，当前等同点名；后续再加判定 */
+    /** 智能：点名 ∪ 规则 ∪ 随机（共用跟聊/概率/白名单/关键词配置） */
     SMART;
 
     public String label() {
@@ -36,7 +36,7 @@ public enum GolemGroupRespondMode {
             case FULL -> "群里说话我都接（跟别人说话时除外）";
             case RULE -> "只听白名单或关键词（@ 我也能触发）";
             case RANDOM -> "按概率偶尔接一句（跟别人说话时除外）";
-            case SMART -> "先按点名来，细则还没定";
+            case SMART -> "@/跟聊、规则命中或按概率都会接（跟别人说话时除外）";
         };
     }
 

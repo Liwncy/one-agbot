@@ -77,8 +77,8 @@ public class GolemOwnerCommandHandler {
                 boolean on = groupGate.isEnabled(msg.accountId(), msg.groupId());
                 String modeLine = groupModeCommandHandler.statusLine(msg);
                 reply(receiver, on
-                        ? ("这个群开着呢；" + modeLine)
-                        : ("这个群歇着呢；" + modeLine));
+                        ? ("开着呢；" + modeLine)
+                        : ("歇着呢；" + modeLine));
                 yield true;
             }
         };

@@ -55,22 +55,24 @@ public interface GolemGroupRespondPolicy {
         GolemGroupSettings settings = get(msg.accountId(), msg.groupId());
         return switch (settings.mode()) {
             case FULL -> true;
-            case MENTION, SMART -> mentioned || mentionWindowActive;
-            case RULE -> {
-                if (mentioned || mentionWindowActive) {
-                    yield true;
-                }
-                GolemGroupRule rule = settings.rule();
-                yield rule.matchesUser(msg.userId()) || rule.matchesKeyword(msg.msg());
-            }
-            case RANDOM -> {
-                if (mentioned || mentionWindowActive) {
-                    yield true;
-                }
-                int chance = settings.replyChancePercent();
-                yield chance > 0 && ThreadLocalRandom.current().nextInt(100) < chance;
-            }
+            case MENTION -> mentioned || mentionWindowActive;
+            case RULE -> mentioned || mentionWindowActive || matchesRule(settings, msg);
+            case RANDOM -> mentioned || mentionWindowActive || hitsChance(settings);
+            // 智能 = 点名 ∪ 规则 ∪ 随机（配置共用：跟聊秒数 / 概率 / 用户 / 关键词）
+            case SMART -> mentioned || mentionWindowActive
+                    || matchesRule(settings, msg)
+                    || hitsChance(settings);
         };
+    }
+
+    private static boolean matchesRule(GolemGroupSettings settings, MsgInfo msg) {
+        GolemGroupRule rule = settings.rule();
+        return rule.matchesUser(msg.userId()) || rule.matchesKeyword(msg.msg());
+    }
+
+    private static boolean hitsChance(GolemGroupSettings settings) {
+        int chance = settings.replyChancePercent();
+        return chance > 0 && ThreadLocalRandom.current().nextInt(100) < chance;
     }
 
     static String key(String accountId, String groupId) {

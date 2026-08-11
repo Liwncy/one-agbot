@@ -175,9 +175,13 @@ public class GolemWebhookController {
                         preview(msg.msg()));
                 continue;
             }
-            // 点名或跟聊窗续窗；随机命中也可续（若开了跟聊）
+            // 点名/跟聊续窗；随机或智能放行后也可续（若开了跟聊）
+            GolemGroupRespondMode mode = msg.isPrivateChat()
+                    ? null
+                    : respondPolicy.getMode(msg.accountId(), msg.groupId());
             if (!msg.isPrivateChat() && (mentioned || activated
-                    || respondPolicy.getMode(msg.accountId(), msg.groupId()) == GolemGroupRespondMode.RANDOM)) {
+                    || mode == GolemGroupRespondMode.RANDOM
+                    || mode == GolemGroupRespondMode.SMART)) {
                 mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId(), followUp);
             }
             accepted++;

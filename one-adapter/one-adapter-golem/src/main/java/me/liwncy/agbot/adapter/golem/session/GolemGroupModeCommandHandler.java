@@ -71,34 +71,32 @@ public class GolemGroupModeCommandHandler {
             case SET_MODE -> {
                 GolemGroupSettings cur = respondPolicy.get(msg.accountId(), msg.groupId());
                 GolemGroupSettings next = cur.withMode(parsed.mode());
-                if (parsed.mode() == GolemGroupRespondMode.RANDOM && next.replyChancePercent() <= 0) {
+                if ((parsed.mode() == GolemGroupRespondMode.RANDOM || parsed.mode() == GolemGroupRespondMode.SMART)
+                        && next.replyChancePercent() <= 0) {
                     next = next.withReplyChancePercent(GolemGroupSettings.DEFAULT_REPLY_CHANCE);
                 }
                 respondPolicy.save(msg.accountId(), msg.groupId(), next);
-                String extra = parsed.mode() == GolemGroupRespondMode.RANDOM
-                        ? ("；" + next.chanceLabel() + "（可发「概率 15」改）")
-                        : "";
-                reply(receiver, "好了，这个群改成「" + parsed.mode().label() + "」——" + parsed.mode().tip() + extra);
+                reply(receiver, "好了，换成「" + parsed.mode().label() + "」了 👌");
                 log.info("Group mode set accountId={} groupId={} mode={} chance={}",
                         msg.accountId(), msg.groupId(), parsed.mode(), next.replyChancePercent());
                 yield true;
             }
             case SET_CHANCE -> {
                 GolemGroupSettings cur = respondPolicy.get(msg.accountId(), msg.groupId());
-                GolemGroupSettings next = cur.withReplyChancePercent(parsed.chancePercent())
-                        .withMode(GolemGroupRespondMode.RANDOM);
+                // 智能模式只改概率；其它模式发「概率」时切到随机
+                GolemGroupSettings next = cur.withReplyChancePercent(parsed.chancePercent());
+                if (cur.mode() != GolemGroupRespondMode.SMART) {
+                    next = next.withMode(GolemGroupRespondMode.RANDOM);
+                }
                 respondPolicy.save(msg.accountId(), msg.groupId(), next);
-                reply(receiver, "好了，随机模式，大约 " + next.replyChancePercent() + "% 会接一句（跟别人说话时仍不接）");
-                log.info("Group chance set accountId={} groupId={} chance={}",
-                        msg.accountId(), msg.groupId(), next.replyChancePercent());
+                reply(receiver, "好了 👌");
+                log.info("Group chance set accountId={} groupId={} mode={} chance={}",
+                        msg.accountId(), msg.groupId(), next.mode(), next.replyChancePercent());
                 yield true;
             }
             case SET_FOLLOW_UP -> {
                 respondPolicy.setFollowUpSeconds(msg.accountId(), msg.groupId(), parsed.followUpSeconds());
-                String tip = parsed.followUpSeconds() <= 0
-                        ? "跟聊关了，得 @ 我才续得上"
-                        : ("跟聊开了，点名后 " + parsed.followUpSeconds() + " 秒内可免 @");
-                reply(receiver, "好了，" + tip);
+                reply(receiver, "好了 👌");
                 yield true;
             }
             case SET_USERS -> {
@@ -106,7 +104,7 @@ public class GolemGroupModeCommandHandler {
                         .withUsers(parsed.tokens());
                 respondPolicy.setRule(msg.accountId(), msg.groupId(), next);
                 ensureRuleMode(msg);
-                reply(receiver, "好了，白名单用户记上了：" + join(parsed.tokens()));
+                reply(receiver, "好了 👌");
                 yield true;
             }
             case SET_KEYWORDS -> {
@@ -114,44 +112,37 @@ public class GolemGroupModeCommandHandler {
                         .withKeywords(parsed.tokens());
                 respondPolicy.setRule(msg.accountId(), msg.groupId(), next);
                 ensureRuleMode(msg);
-                reply(receiver, "好了，关键词记上了：" + join(parsed.tokens()));
+                reply(receiver, "好了 👌");
                 yield true;
             }
             case CLEAR_RULE -> {
                 respondPolicy.setRule(msg.accountId(), msg.groupId(), GolemGroupRule.EMPTY);
-                reply(receiver, "好了，规则清干净了");
+                reply(receiver, "好了 👌");
                 yield true;
             }
             case HELP -> {
-                reply(receiver, helpText(msg));
+                // 群里不甩指令菜单，避免暴露用法
+                reply(receiver, "没听懂，再发一次？ 🤔");
                 yield true;
             }
         };
     }
 
+    /** 对外状态一句带过，不展开 tip / 规则明细 / 改法。 */
     public String statusLine(MsgInfo msg) {
         if (msg == null || msg.isPrivateChat()) {
             return "";
         }
-        return respondPolicy.get(msg.accountId(), msg.groupId()).summary();
+        GolemGroupSettings s = respondPolicy.get(msg.accountId(), msg.groupId());
+        return "模式「" + s.mode().label() + "」";
     }
 
     private void ensureRuleMode(MsgInfo msg) {
-        if (respondPolicy.getMode(msg.accountId(), msg.groupId()) != GolemGroupRespondMode.RULE) {
+        GolemGroupRespondMode mode = respondPolicy.getMode(msg.accountId(), msg.groupId());
+        // 智能模式保留，只改规则配置；其它非规则模式才自动切到规则
+        if (mode != GolemGroupRespondMode.RULE && mode != GolemGroupRespondMode.SMART) {
             respondPolicy.setMode(msg.accountId(), msg.groupId(), GolemGroupRespondMode.RULE);
         }
-    }
-
-    private String helpText(MsgInfo msg) {
-        return "群响应可以这样切：\n"
-                + "模式 点名 / 全量 / 随机 / 智能 / 规则\n"
-                + "概率 15（随机模式百分比）\n"
-                + "跟聊 关 / 跟聊 60\n"
-                + "规则 用户 wxid1 wxid2\n"
-                + "规则 关键词 帮助 查\n"
-                + "规则 清空\n"
-                + "说明：@别人时我不会接；智能细则还没定，暂等同点名\n"
-                + "现在：" + statusLine(msg);
     }
 
     private String normalizeCommand(String raw) {
@@ -263,10 +254,6 @@ public class GolemGroupModeCommandHandler {
             }
         }
         return List.copyOf(out);
-    }
-
-    private static String join(List<String> tokens) {
-        return tokens == null || tokens.isEmpty() ? "（空）" : String.join("、", tokens);
     }
 
     private void reply(String receiver, String content) {
