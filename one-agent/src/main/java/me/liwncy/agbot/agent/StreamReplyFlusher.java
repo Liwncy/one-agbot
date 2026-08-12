@@ -7,14 +7,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 缓冲流式文本，在段落 / 完整图片或视频 URL / 句号边界切分后回调。
+ * 缓冲流式文本，在段落空行 / 完整图片或视频 URL 边界切分后回调。
+ * 不按句号切，避免微信里一条回复被拆成多条短消息。
  */
 final class StreamReplyFlusher {
     private static final Pattern TRAILING_URL = Pattern.compile("https?://\\S+$", Pattern.CASE_INSENSITIVE);
     private static final Pattern MEDIA_URL = Pattern.compile(
             "https?://[^\\s<>\"'\\]\\)\\u4e00-\\u9fff]+",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern SENTENCE_END = Pattern.compile("[。！？!?\\n]");
 
     private final StringBuilder buffer = new StringBuilder();
     private final int minChars;
@@ -86,23 +86,8 @@ final class StreamReplyFlusher {
             return mediaCut;
         }
 
-        if (text.trim().length() < minChars && !forceBoundary) {
-            return -1;
-        }
-
-        Matcher sentence = SENTENCE_END.matcher(text);
-        int last = -1;
-        while (sentence.find()) {
-            int end = sentence.end();
-            String head = text.substring(0, end);
-            if (hasIncompleteTrailingUrl(head)) {
-                continue;
-            }
-            if (head.trim().length() >= minChars) {
-                last = end;
-            }
-        }
-        return last;
+        // 不再按句号 / 单换行切分；剩余文本在 finish() 时整段发出。
+        return -1;
     }
 
     private int cutAfterCompleteMediaUrl(String text, boolean allowAtEnd) {
