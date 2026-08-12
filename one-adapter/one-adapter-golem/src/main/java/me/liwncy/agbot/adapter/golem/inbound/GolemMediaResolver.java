@@ -18,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -51,7 +53,7 @@ public class GolemMediaResolver {
             return msg;
         }
         MediaRef current = MediaRef.fromMsg(msg);
-        // FILE/BASE64 已可用；微信/QQ 表情 CDN 的 URL 往往防盗链，Agent 直拉会失败 → 适配器落盘
+        // FILE/BASE64 已可用；表情/微信图床 URL 一律落盘（域名不固定，Agent 直拉常 403）
         if (current != null && current.usableForFetch()
                 && !(current.form() == MediaForm.URL && needsLocalMaterialize(current.path(), type))) {
             return msg;
@@ -94,16 +96,18 @@ public class GolemMediaResolver {
         String thumb = string(extra.get(ChannelExtraKeys.THUMB));
         String thumbAes = firstNonBlank(string(extra.get("thumbAeskey")), aesKey);
 
-        // 0) 表情/图片 HTTP 直链（含引用表情 cdnurl）——先落到本地，避免 Agent 被防盗链拦
-        if (!httpUrl.isBlank() && (MsgType.EMOJI.equals(type) || MsgType.IMAGE.equals(type))) {
-            try {
-                byte[] bytes = httpDownload(httpUrl);
-                if (bytes != null && bytes.length > 0) {
-                    String mime = sniffImageMime(bytes, string(extra.get(ChannelExtraKeys.MEDIA_MIME)));
-                    return new ResolvedMedia(bytes, guessExt(type, mime), mime);
+        // 0) 表情/图片 HTTP 直链（主链 + 备用链）——先落到本地，避免 Agent 被防盗链拦
+        if (MsgType.EMOJI.equals(type) || MsgType.IMAGE.equals(type)) {
+            for (String candidate : emojiHttpCandidates(httpUrl, extra)) {
+                try {
+                    byte[] bytes = httpDownload(candidate);
+                    if (bytes != null && bytes.length > 64 && looksLikeImageBytes(bytes)) {
+                        String mime = sniffImageMime(bytes, string(extra.get(ChannelExtraKeys.MEDIA_MIME)));
+                        return new ResolvedMedia(bytes, guessExt(type, mime), mime);
+                    }
+                } catch (Exception e) {
+                    log.debug("HTTP media download failed url={}: {}", preview(candidate), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.debug("HTTP media download failed url={}: {}", preview(httpUrl), e.getMessage());
             }
         }
 
@@ -135,16 +139,28 @@ public class GolemMediaResolver {
             }
         }
 
-        // 2) 按消息 id 下载（直发媒体）；引用优先用 replyToMsgId(svrid) 作 newId
-        long[] ids = parsePackedIds(msg.msgId());
+        // 2) 按消息 id 下载；引用媒体优先 replyToMsgId(svrid)，勿用外层引用气泡自己的 msgId
+        boolean quoteMedia = isMediaType(string(extra.get(ChannelExtraKeys.QUOTE_MSG_TYPE)));
+        long[] ids = quoteMedia ? idsFromReplyTo(msg.replyToMsgId()) : null;
+        if (ids == null) {
+            ids = parsePackedIds(msg.msgId());
+        }
         if (ids == null) {
             ids = idsFromReplyTo(msg.replyToMsgId());
         }
         long size = parseLong(extra.get("length"), parseLong(extra.get(ChannelExtraKeys.MEDIA_SIZE), 0L));
-        if (ids != null && size > 0) {
+        // 表情引用经常缺 length，仍尝试按 svrid 拉图
+        boolean tryWithoutSize = MsgType.EMOJI.equals(type) || MsgType.IMAGE.equals(type);
+        if (ids != null && (size > 0 || tryWithoutSize)) {
+            long downloadSize = size > 0 ? size : 2L * 1024 * 1024;
             try {
+                // 引用媒体的 sender 是被引用消息作者，不是当前说话人
+                String mediaSender = quoteMedia
+                        ? firstNonBlank(string(extra.get(ChannelExtraKeys.QUOTE_FROM)), msg.userId())
+                        : msg.userId();
                 byte[] bytes = switch (type) {
-                    case MsgType.IMAGE -> apiClient.downloadImageByMsg(ids[1], ids[0], msg.userId(), size);
+                    case MsgType.IMAGE, MsgType.EMOJI -> apiClient.downloadImageByMsg(
+                            ids[1], ids[0], mediaSender, downloadSize);
                     case MsgType.VIDEO -> apiClient.downloadVideoByMsg(ids[1], ids[0], size);
                     case MsgType.AUDIO -> apiClient.downloadVoiceByMsg(
                             ids[1], ids[0],
@@ -164,12 +180,15 @@ public class GolemMediaResolver {
         return null;
     }
 
-    /** 微信/QQ 表情图床对服务端直拉常 403，需在适配器侧落盘后再给 Agent。 */
+    /** 表情一律落盘；图片遇到微信/QQ 图床也落盘（Agent 直拉常 403）。 */
     private static boolean needsLocalMaterialize(String url, String type) {
         if (url == null || url.isBlank()) {
             return false;
         }
-        if (!MsgType.EMOJI.equals(type) && !MsgType.IMAGE.equals(type)) {
+        if (MsgType.EMOJI.equals(type)) {
+            return true;
+        }
+        if (!MsgType.IMAGE.equals(type)) {
             return false;
         }
         String u = url.toLowerCase(Locale.ROOT);
@@ -178,7 +197,58 @@ public class GolemMediaResolver {
                 || u.contains("weixin.qq.com")
                 || u.contains("wx.qlogo.cn")
                 || u.contains("vweixinf")
-                || u.contains("emoji");
+                || u.contains("emoji")
+                || u.contains("snsvideo")
+                || u.contains("wxsnsdy");
+    }
+
+    private static List<String> emojiHttpCandidates(String primary, Map<String, Object> extra) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (primary != null && looksLikeHttp(primary)) {
+            out.add(primary.trim());
+        }
+        String joined = string(extra.get("emojiUrlCandidates"));
+        if (!joined.isBlank()) {
+            for (String part : joined.split("\\|")) {
+                if (looksLikeHttp(part)) {
+                    out.add(part.trim());
+                }
+            }
+        }
+        for (String key : List.of(
+                ChannelExtraKeys.MEDIA_URL, "emoji_url", "cdnurl", "encrypturl", "externurl", "thumburl")) {
+            String v = string(extra.get(key));
+            if (looksLikeHttp(v)) {
+                out.add(v.trim());
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static boolean looksLikeImageBytes(byte[] bytes) {
+        if (bytes == null || bytes.length < 6) {
+            return false;
+        }
+        // JPEG / PNG / GIF / WEBP / 常见不明头仍放行较大载荷
+        if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+            return true;
+        }
+        if (bytes[0] == (byte) 0x89 && bytes[1] == 0x50) {
+            return true;
+        }
+        if (bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+            return true;
+        }
+        if (bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F') {
+            return true;
+        }
+        // 拒绝明显 HTML/JSON 错误页
+        String head = new String(bytes, 0, Math.min(64, bytes.length), java.nio.charset.StandardCharsets.US_ASCII)
+                .toLowerCase(Locale.ROOT);
+        if (head.contains("<html") || head.contains("<!doctype") || head.contains("{")) {
+            return false;
+        }
+        return bytes.length >= 256;
     }
 
     private static byte[] httpDownload(String url) throws Exception {

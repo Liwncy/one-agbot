@@ -6,6 +6,7 @@ import me.liwncy.agbot.kernel.api.message.MediaRef;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -39,7 +40,7 @@ final class AgentMessageFormatter {
             case MsgType.FORWARD -> firstNonBlank(msgInfo.msg(), "请查看转发内容");
             default -> firstNonBlank(msgInfo.msg(), "[" + type + "]");
         };
-        String text = withSpeaker(msgInfo, appendQuote(content, extra));
+        String text = withSpeaker(msgInfo, appendQuote(content, extra, msgInfo));
         // 引用图/表情/视频封面：顶层仍是 TEXT，附件按引用类型上传
         String agentType = resolveAgentMediaType(type, media, extra);
         return new AgentUserInput(agentType, text, media);
@@ -119,19 +120,24 @@ final class AgentMessageFormatter {
         return body;
     }
 
-    /** 暴露 md5/url，便于 Agent 调 emoji_save；无微信指纹时只给 url。 */
+    /** 暴露 md5/url，便于 Agent 调 emoji_save；本地文件只提示附图，不把盘符路径塞给模型。 */
     private static String emojiContent(MsgInfo msgInfo, Map<String, Object> extra) {
         String caption = captionOr(msgInfo.msg(), "请看这个表情");
         String md5 = stringExtra(extra, ChannelExtraKeys.MD5);
         String url = firstNonBlank(
-                blankToEmpty(msgInfo.path()),
-                stringExtra(extra, ChannelExtraKeys.MEDIA_URL));
+                looksLikeHttp(msgInfo == null ? null : msgInfo.path()) ? msgInfo.path() : "",
+                looksLikeHttp(stringExtra(extra, ChannelExtraKeys.MEDIA_URL))
+                        ? stringExtra(extra, ChannelExtraKeys.MEDIA_URL) : "");
         StringBuilder sb = new StringBuilder(caption);
         if (!md5.isBlank()) {
             sb.append(" md5=").append(md5);
         }
         if (!url.isBlank()) {
             sb.append(" url=").append(url);
+        }
+        MediaRef media = msgInfo == null ? null : MediaRef.fromMsg(msgInfo);
+        if (media != null && media.usableForFetch() && media.form() == MediaForm.FILE) {
+            sb.append(" （附图已带上）");
         }
         return sb.toString().trim();
     }
@@ -183,7 +189,7 @@ final class AgentMessageFormatter {
         };
     }
 
-    private static String appendQuote(String text, Map<String, Object> extra) {
+    private static String appendQuote(String text, Map<String, Object> extra, MsgInfo msgInfo) {
         String quote = stringExtra(extra, ChannelExtraKeys.QUOTE_CONTENT);
         if (quote.isBlank()) {
             return text;
@@ -205,17 +211,32 @@ final class AgentMessageFormatter {
             sb.append(' ').append(quoteFrom);
         }
         sb.append("] ").append(trim(quote, 500));
-        if (MsgType.EMOJI.equalsIgnoreCase(quoteType)) {
+        if (MsgType.EMOJI.equalsIgnoreCase(quoteType) || MsgType.IMAGE.equalsIgnoreCase(quoteType)) {
             String md5 = stringExtra(extra, ChannelExtraKeys.MD5);
-            String url = stringExtra(extra, ChannelExtraKeys.MEDIA_URL);
+            String url = firstNonBlank(
+                    stringExtra(extra, ChannelExtraKeys.MEDIA_URL),
+                    looksLikeHttp(msgInfo == null ? null : msgInfo.path()) ? msgInfo.path() : "");
             if (!md5.isBlank()) {
                 sb.append(" md5=").append(md5);
             }
             if (!url.isBlank()) {
                 sb.append(" url=").append(url);
             }
+            MediaRef quoteMedia = msgInfo == null ? null : MediaRef.fromMsg(msgInfo);
+            if (quoteMedia != null && quoteMedia.usableForFetch()
+                    && quoteMedia.form() == MediaForm.FILE) {
+                sb.append(" （附图已带上）");
+            }
         }
         return sb.toString().trim();
+    }
+
+    private static boolean looksLikeHttp(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("http://") || lower.startsWith("https://");
     }
 
     private static String trim(String raw, int max) {

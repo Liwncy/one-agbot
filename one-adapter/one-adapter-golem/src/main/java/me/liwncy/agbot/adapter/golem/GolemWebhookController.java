@@ -150,7 +150,9 @@ public class GolemWebhookController {
                     msg.msg(),
                     pushContent,
                     properties.getBotWechatId(),
-                    properties.getBotWechatName())) {
+                    properties.getBotWechatName(),
+                    stringExtra(msg, ChannelExtraKeys.QUOTE_FROM),
+                    stringExtra(msg, ChannelExtraKeys.QUOTE_FROM_NAME))) {
                 skippedNoMention++;
                 log.info("Skip talking-to-others accountId={} groupId={} userId={} mentionIds={} msg={}",
                         msg.accountId(), msg.groupId(), msg.userId(),

@@ -32,7 +32,7 @@ public enum GolemGroupRespondMode {
 
     public String tip() {
         return switch (this) {
-            case MENTION -> "要 @ 我才回（跟聊窗口内可免 @）";
+            case MENTION -> "要 @ 我或引用我才回（跟聊窗口内可免 @）";
             case FULL -> "群里说话我都接（跟别人说话时除外）";
             case RULE -> "只听白名单或关键词（@ 我也能触发）";
             case RANDOM -> "按概率偶尔接一句（跟别人说话时除外）";

@@ -137,6 +137,14 @@ public final class GolemMessageParser {
                 msgSource,
                 properties.getBotWechatId(),
                 properties.getBotWechatName());
+        // 引用机器人消息也算点名（refermsg 发送者为机器人）
+        if (!botMentioned && typeExtra != null) {
+            botMentioned = GolemMentionDetector.isQuoteOfBot(
+                    mapString(typeExtra, ChannelExtraKeys.QUOTE_FROM),
+                    mapString(typeExtra, ChannelExtraKeys.QUOTE_FROM_NAME),
+                    properties.getBotWechatId(),
+                    properties.getBotWechatName());
+        }
         if ("group".equals(source) && botMentioned && MsgType.TEXT.equals(msgType)) {
             content = GolemMentionDetector.stripMentionPrefix(
                     content, properties.getBotWechatId(), properties.getBotWechatName());
@@ -326,13 +334,25 @@ public final class GolemMessageParser {
                         resolved, null, extra);
             }
             case MsgType.EMOJI -> {
-                attachEmojiFields(bodyXml, extra);
+                // 群/私聊 content 偶发整段实体编码，或夹在 <msg> 里
+                String emojiXml = firstNonBlank(
+                        findEmojiXml(bodyXml),
+                        findEmojiXml(decodeXmlDeep(bodyXml)),
+                        bodyXml);
+                attachEmojiFields(emojiXml, extra);
                 String path = decodeMediaUrl(firstNonBlank(
-                        xmlAttr(bodyXml, "cdnurl"),
-                        xmlAttr(bodyXml, "encrypturl"),
-                        xmlAttr(bodyXml, "externurl"),
-                        xmlAttr(bodyXml, "thumburl"),
-                        xmlAttr(bodyXml, "emoji_url")));
+                        xmlAttr(emojiXml, "cdnurl"),
+                        xmlAttr(emojiXml, "encrypturl"),
+                        xmlAttr(emojiXml, "externurl"),
+                        xmlAttr(emojiXml, "thumburl"),
+                        xmlAttr(emojiXml, "emoji_url")));
+                // 备用链留给 MediaResolver 依次尝试
+                putIfPresent(extra, "emojiUrlCandidates", joinNonBlank("|",
+                        decodeMediaUrl(xmlAttr(emojiXml, "cdnurl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "encrypturl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "externurl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "thumburl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "emoji_url"))));
                 String resolved = blankToNull(path);
                 if (resolved != null) {
                     resolved = mediaRefOfLocator(resolved).applyToExtra(extra);
@@ -390,7 +410,7 @@ public final class GolemMessageParser {
             String referBlock = matchGroup(REFER_MSG_BLOCK, appXml);
             String referXml = referBlock.isBlank() ? appXml : referBlock;
             String referType = matchGroup(REFER_TYPE, referXml);
-            String referRaw = decodeXml(matchGroup(REFER_CONTENT, referXml));
+            String referRaw = decodeXmlDeep(matchGroup(REFER_CONTENT, referXml));
             String svrid = matchGroup(REFER_SVRID, referXml);
             String quoteMsgType = quoteMsgTypeOf(referType);
             String quoteContent = summarizeReferContent(referType, referRaw);
@@ -648,14 +668,20 @@ public final class GolemMessageParser {
                 yield mediaRefOfLocator(path).applyToExtra(extra);
             }
             case "47" -> {
-                attachEmojiFields(content, extra);
+                // refer content 常整段 HTML 实体编码；多解几次再抽 <emoji>
+                String emojiXml = firstNonBlank(
+                        findEmojiXml(content),
+                        findEmojiXml(referRaw),
+                        content);
+                attachEmojiFields(emojiXml, extra);
                 String path = decodeMediaUrl(firstNonBlank(
-                        xmlAttr(content, "cdnurl"),
-                        xmlAttr(content, "encrypturl"),
-                        xmlAttr(content, "externurl"),
-                        xmlAttr(content, "thumburl"),
-                        xmlAttr(content, "emoji_url")));
+                        xmlAttr(emojiXml, "cdnurl"),
+                        xmlAttr(emojiXml, "encrypturl"),
+                        xmlAttr(emojiXml, "externurl"),
+                        xmlAttr(emojiXml, "thumburl"),
+                        xmlAttr(emojiXml, "emoji_url")));
                 if (path.isBlank()) {
+                    // 至少留下 md5，供 Agent 调表情库；图由 MediaResolver 再试 svrid 拉取
                     yield null;
                 }
                 yield mediaRefOfLocator(path).applyToExtra(extra);
@@ -1006,6 +1032,37 @@ public final class GolemMessageParser {
                 .trim();
     }
 
+    /** 引用 content 常见多层实体编码，解到稳定为止。 */
+    private static String decodeXmlDeep(String text) {
+        String cur = text == null ? "" : text;
+        for (int i = 0; i < 4; i++) {
+            String next = decodeXml(cur);
+            if (next.equals(cur)) {
+                return next;
+            }
+            cur = next;
+        }
+        return cur;
+    }
+
+    /** 从载荷里截出含 md5/cdnurl 的 emoji 片段。 */
+    private static String findEmojiXml(String raw) {
+        String xml = decodeXmlDeep(normalizeReferPayload(raw == null ? "" : raw));
+        if (xml.isBlank()) {
+            return "";
+        }
+        int at = xml.toLowerCase(Locale.ROOT).indexOf("<emoji");
+        if (at < 0) {
+            return xml.contains("md5=") || xml.contains("cdnurl=") ? xml : "";
+        }
+        int end = xml.indexOf('>', at);
+        if (end < 0) {
+            return xml.substring(at);
+        }
+        // 自闭合或成对标签都够抽属性
+        return xml.substring(at, Math.min(xml.length(), end + 1));
+    }
+
     /** 表情/图片 CDN 地址：解 XML 实体，并去掉多余空白。 */
     private static String decodeMediaUrl(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -1023,6 +1080,14 @@ public final class GolemMessageParser {
         if (value != null && !value.isBlank()) {
             extra.put(key, value);
         }
+    }
+
+    private static String mapString(Map<String, Object> map, String key) {
+        if (map == null || key == null) {
+            return "";
+        }
+        Object v = map.get(key);
+        return v == null ? "" : String.valueOf(v).trim();
     }
 
     private static String blankToNull(String value) {
@@ -1055,6 +1120,23 @@ public final class GolemMessageParser {
             }
         }
         return "";
+    }
+
+    private static String joinNonBlank(String sep, String... values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append(sep);
+            }
+            sb.append(value.trim());
+        }
+        return sb.toString();
     }
 
     private static String preview(String msg) {

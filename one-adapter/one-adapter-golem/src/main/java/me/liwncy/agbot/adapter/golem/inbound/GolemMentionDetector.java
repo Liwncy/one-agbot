@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 群聊点名检测（对齐 xchatbot：正文含昵称 / @昵称 / wxid，以及 msg_source 中 atuserlist）。
+ * 群聊点名检测（对齐 xchatbot：正文含昵称 / @昵称 / wxid，msg_source atuserlist，以及引用机器人消息）。
  */
 public final class GolemMentionDetector {
     private static final Pattern AT_USER_LIST = Pattern.compile(
@@ -69,6 +69,27 @@ public final class GolemMentionDetector {
         return false;
     }
 
+    /**
+     * 引用/回复的原消息是否来自机器人（refermsg fromusr / displayname）。
+     */
+    public static boolean isQuoteOfBot(String quoteFrom,
+                                       String quoteFromName,
+                                       String botWechatId,
+                                       String botWechatName) {
+        String botId = trim(botWechatId);
+        String botName = trim(botWechatName);
+        String from = trim(quoteFrom);
+        String fromName = trim(quoteFromName);
+        if (!botId.isEmpty() && !from.isEmpty() && botId.equalsIgnoreCase(from)) {
+            return true;
+        }
+        if (!botName.isEmpty() && !fromName.isEmpty()
+                && normalizeForMatch(botName).equals(normalizeForMatch(fromName))) {
+            return true;
+        }
+        return false;
+    }
+
     /** 正文里的 @xxx（微信窄空格后常见） */
     private static final Pattern AT_TOKEN = Pattern.compile("[@＠]\\s*([^\\s@＠]{1,40})");
 
@@ -78,18 +99,30 @@ public final class GolemMentionDetector {
      *   <li>{@code atuserlist} 里有别人、没有机器人</li>
      *   <li>正文/预览里 @ 了别人昵称，且没有 @ 机器人</li>
      * </ol>
-     * 若已明确 @ 机器人，返回 false（可同时 @ 多人）。
+     * 若已明确 @ 机器人或引用机器人消息，返回 false（可同时 @ 多人）。
      */
     public static boolean isTalkingToOthersOnly(List<String> mentionIds,
                                                 String content,
                                                 String pushContent,
                                                 String botWechatId,
                                                 String botWechatName) {
-        // 已点名机器人（含「@了你」、正文 @昵称、atuserlist）→ 不是「只跟别人说」
+        return isTalkingToOthersOnly(mentionIds, content, pushContent,
+                botWechatId, botWechatName, null, null);
+    }
+
+    public static boolean isTalkingToOthersOnly(List<String> mentionIds,
+                                                String content,
+                                                String pushContent,
+                                                String botWechatId,
+                                                String botWechatName,
+                                                String quoteFrom,
+                                                String quoteFromName) {
+        // 已点名机器人（含「@了你」、正文 @昵称、atuserlist、引用机器人）→ 不是「只跟别人说」
         boolean botHit = atuserListHasBot(mentionIds, botWechatId)
                 || textAtsBot(content, botWechatId, botWechatName)
                 || textAtsBot(pushContent, botWechatId, botWechatName)
-                || containsAtYouHint(content, pushContent);
+                || containsAtYouHint(content, pushContent)
+                || isQuoteOfBot(quoteFrom, quoteFromName, botWechatId, botWechatName);
         if (botHit) {
             return false;
         }
