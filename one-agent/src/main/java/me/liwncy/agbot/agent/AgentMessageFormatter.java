@@ -30,7 +30,7 @@ final class AgentMessageFormatter {
             case MsgType.VIDEO -> captionOr(msgInfo.msg(), "请看这段视频");
             case MsgType.AUDIO -> captionOr(msgInfo.msg(), "请听这段语音");
             case MsgType.FILE -> captionOr(msgInfo.msg(), "请查看这个文件");
-            case MsgType.EMOJI -> captionOr(msgInfo.msg(), "请看这个表情");
+            case MsgType.EMOJI -> emojiContent(msgInfo, extra);
             case MsgType.LINK -> linkContent(msgInfo, extra);
             case MsgType.CARD -> "[名片] " + firstNonBlank(msgInfo.msg(),
                     stringExtra(extra, ChannelExtraKeys.CARD_USERNAME));
@@ -119,6 +119,23 @@ final class AgentMessageFormatter {
         return body;
     }
 
+    /** 暴露 md5/url，便于 Agent 调 emoji_save；无微信指纹时只给 url。 */
+    private static String emojiContent(MsgInfo msgInfo, Map<String, Object> extra) {
+        String caption = captionOr(msgInfo.msg(), "请看这个表情");
+        String md5 = stringExtra(extra, ChannelExtraKeys.MD5);
+        String url = firstNonBlank(
+                blankToEmpty(msgInfo.path()),
+                stringExtra(extra, ChannelExtraKeys.MEDIA_URL));
+        StringBuilder sb = new StringBuilder(caption);
+        if (!md5.isBlank()) {
+            sb.append(" md5=").append(md5);
+        }
+        if (!url.isBlank()) {
+            sb.append(" url=").append(url);
+        }
+        return sb.toString().trim();
+    }
+
     private static String linkContent(MsgInfo msgInfo, Map<String, Object> extra) {
         String title = blankToEmpty(msgInfo.msg());
         String desc = stringExtra(extra, ChannelExtraKeys.DESC);
@@ -188,6 +205,16 @@ final class AgentMessageFormatter {
             sb.append(' ').append(quoteFrom);
         }
         sb.append("] ").append(trim(quote, 500));
+        if (MsgType.EMOJI.equalsIgnoreCase(quoteType)) {
+            String md5 = stringExtra(extra, ChannelExtraKeys.MD5);
+            String url = stringExtra(extra, ChannelExtraKeys.MEDIA_URL);
+            if (!md5.isBlank()) {
+                sb.append(" md5=").append(md5);
+            }
+            if (!url.isBlank()) {
+                sb.append(" url=").append(url);
+            }
+        }
         return sb.toString().trim();
     }
 

@@ -4,6 +4,7 @@ import me.liwncy.agbot.agent.config.AgbotAgentProperties;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.agent.AgentOutcome;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
+import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
@@ -190,6 +191,10 @@ public class SnailAiAgentBridge implements AgentBridge {
             return;
         }
         String trimmed = part.trim();
+        if (AgentOutboundEmoji.looksLikeEmojiLine(trimmed)) {
+            pushEmojiOrFallback(runtime, msgInfo, AgentOutboundEmoji.parseLine(trimmed));
+            return;
+        }
         if (AgentOutboundImages.looksLikeImageUrl(trimmed)) {
             pushImageOrFallback(runtime, msgInfo, trimmed);
             return;
@@ -199,6 +204,35 @@ public class SnailAiAgentBridge implements AgentBridge {
             return;
         }
         pushText(runtime, msgInfo, part, true);
+    }
+
+    private void pushEmojiOrFallback(AdapterRuntime runtime, MsgInfo msgInfo, AgentOutboundEmoji.Ref ref) {
+        if (ref == null || ref.md5() == null || ref.md5().isBlank()) {
+            return;
+        }
+        String imageUrl = ref.imageUrl() == null ? "" : ref.imageUrl().trim();
+        ReplyInfo emoji = ReplyInfo.emoji(ref.md5(), msgInfo);
+        if (!imageUrl.isBlank()) {
+            emoji = ReplyInfo.merge(
+                    ReplyInfo.of(MsgType.EMOJI, null, imageUrl, null, null, null, emoji.extra()),
+                    msgInfo);
+        }
+        try {
+            String msgId = runtime.push(msgInfo.platform(), emoji).join();
+            if (msgId != null && !msgId.isBlank()) {
+                log.info("Agent stream push type=emoji userId={} md5={} url={}",
+                        msgInfo.userId(), ref.md5(), preview(imageUrl, 120));
+                return;
+            }
+            log.warn("Agent stream sendEmoji empty msgId, fallback image userId={} md5={}",
+                    msgInfo.userId(), ref.md5());
+        } catch (Exception e) {
+            log.warn("Agent stream sendEmoji failed, fallback image/text userId={} md5={} err={}",
+                    msgInfo.userId(), ref.md5(), e.toString());
+        }
+        if (!imageUrl.isBlank()) {
+            pushImageOrFallback(runtime, msgInfo, imageUrl);
+        }
     }
 
     private void pushImageOrFallback(AdapterRuntime runtime, MsgInfo msgInfo, String imageUrl) {

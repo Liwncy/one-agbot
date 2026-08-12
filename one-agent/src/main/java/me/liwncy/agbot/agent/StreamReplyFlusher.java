@@ -15,6 +15,8 @@ final class StreamReplyFlusher {
     private static final Pattern MEDIA_URL = Pattern.compile(
             "https?://[^\\s<>\"'\\]\\)\\u4e00-\\u9fff]+",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern EMOJI_TOKEN = Pattern.compile(
+            "(?i)emoji:[0-9a-f]{32}(?:[ \\t]+https?://\\S+)?");
 
     private final StringBuilder buffer = new StringBuilder();
     private final int minChars;
@@ -81,6 +83,11 @@ final class StreamReplyFlusher {
             }
         }
 
+        int emojiCut = cutAfterCompleteEmojiToken(text);
+        if (emojiCut > 0) {
+            return emojiCut;
+        }
+
         int mediaCut = cutAfterCompleteMediaUrl(text, true);
         if (mediaCut > 0) {
             return mediaCut;
@@ -88,6 +95,18 @@ final class StreamReplyFlusher {
 
         // 不再按句号 / 单换行切分；剩余文本在 finish() 时整段发出。
         return -1;
+    }
+
+    private int cutAfterCompleteEmojiToken(String text) {
+        Matcher m = EMOJI_TOKEN.matcher(text);
+        int cut = -1;
+        while (m.find()) {
+            boolean followed = m.end() < text.length() && isUrlTerminator(text.charAt(m.end()));
+            if (followed || m.end() == text.length()) {
+                cut = m.end();
+            }
+        }
+        return cut;
     }
 
     private int cutAfterCompleteMediaUrl(String text, boolean allowAtEnd) {
@@ -135,18 +154,31 @@ final class StreamReplyFlusher {
         }
     }
 
-    /** 有图/视频时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
+    /** 有图/视频/表情协议时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
     private static List<String> splitKeepMedia(String part) {
-        AgentOutboundImages.Split images = AgentOutboundImages.split(part);
+        AgentOutboundEmoji.Split emojis = AgentOutboundEmoji.split(part);
+        String afterEmoji = emojis.hasEmojis() ? emojis.remainingText() : part;
+        AgentOutboundImages.Split images = AgentOutboundImages.split(afterEmoji);
         AgentOutboundVideos.Split videos = AgentOutboundVideos.split(
-                images.hasImages() ? images.remainingText() : part);
-        if (!images.hasImages() && !videos.hasVideos()) {
+                images.hasImages() ? images.remainingText() : afterEmoji);
+        if (!emojis.hasEmojis() && !images.hasImages() && !videos.hasVideos()) {
             return List.of(part);
         }
         List<String> out = new ArrayList<>();
-        String caption = videos.hasVideos() ? videos.remainingText() : images.remainingText();
+        String caption = videos.hasVideos()
+                ? videos.remainingText()
+                : (images.hasImages() ? images.remainingText() : afterEmoji);
         if (caption != null && !caption.isBlank()) {
             out.add(caption);
+        }
+        if (emojis.hasEmojis()) {
+            for (AgentOutboundEmoji.Ref ref : emojis.emojis()) {
+                if (ref.imageUrl() == null || ref.imageUrl().isBlank()) {
+                    out.add("emoji:" + ref.md5());
+                } else {
+                    out.add("emoji:" + ref.md5() + " " + ref.imageUrl());
+                }
+            }
         }
         if (images.hasImages()) {
             out.addAll(images.imageUrls());
