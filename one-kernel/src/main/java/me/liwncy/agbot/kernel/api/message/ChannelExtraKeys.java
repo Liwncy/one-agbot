@@ -41,6 +41,10 @@ public final class ChannelExtraKeys {
     public static final String SCALE = "scale";
     public static final String FRIEND_ID = "friendId";
     public static final String BOT_ID = "botId";
+    /** 适配器比对主人 id 后打标；Agent 前缀出现单词 {@code owner} */
+    public static final String OWNER = "owner";
+    /** 适配器自定义角色（群主/管理员等），有值才写入前缀 {@code role=}；暂保留 */
+    public static final String ROLE = "role";
 
     private ChannelExtraKeys() {
     }

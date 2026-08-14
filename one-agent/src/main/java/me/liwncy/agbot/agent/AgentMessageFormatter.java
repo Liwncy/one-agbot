@@ -66,7 +66,8 @@ final class AgentMessageFormatter {
     /**
      * 私聊/群聊均在正文前标注发言人。
      * 昵称可改，必须以稳定 {@code userId} 为准；昵称仅作可读展示。
-     * 例：{@code [wxid_abc/张三] 你好}；无昵称则 {@code [wxid_abc] 你好}。
+     * 适配器命中主人时带单词 {@code owner}；自定义 {@code role} 有值才带。
+     * 例：{@code [wxid_abc/张三 owner scope=group:123] 你好}；私聊 {@code [wxid_abc scope=user:wxid_abc]}。
      */
     static String withSpeaker(MsgInfo msgInfo, String body) {
         String text = blankToEmpty(body);
@@ -78,10 +79,38 @@ final class AgentMessageFormatter {
         String speaker = nick.isBlank() || nick.equals(userId)
                 ? userId
                 : userId + "/" + nick;
-        if (text.isBlank()) {
-            return "[" + speaker + "]";
+        Map<String, Object> extra = msgInfo.extra() == null ? Map.of() : msgInfo.extra();
+        StringBuilder prefix = new StringBuilder(speaker);
+        if (isOwner(extra)) {
+            prefix.append(" owner");
         }
-        return "[" + speaker + "] " + text;
+        String role = stringExtra(extra, ChannelExtraKeys.ROLE);
+        if (!role.isBlank()) {
+            prefix.append(" role=").append(role);
+        }
+        String scope = msgInfo.isPrivateChat()
+                ? "user:" + userId
+                : "group:" + firstNonBlank(msgInfo.groupId(), "0");
+        prefix.append(" scope=").append(scope);
+        if (text.isBlank()) {
+            return "[" + prefix + "]";
+        }
+        return "[" + prefix + "] " + text;
+    }
+
+    private static boolean isOwner(Map<String, Object> extra) {
+        if (extra == null) {
+            return false;
+        }
+        Object value = extra.get(ChannelExtraKeys.OWNER);
+        if (value instanceof Boolean flag) {
+            return flag;
+        }
+        if (value == null) {
+            return false;
+        }
+        String text = String.valueOf(value).trim();
+        return "true".equalsIgnoreCase(text) || "1".equals(text) || "owner".equalsIgnoreCase(text);
     }
 
     /** 文本视图：无可用拉取形态时附带 form 提示。 */

@@ -115,7 +115,7 @@ public final class GolemMessageParser {
         // 好友申请（37/65）：结构化字段，勿把整段 XML 交给 Agent
         if (GolemWechatTypeMapper.isFriendVerify(wechatType)) {
             return mapFriendVerify(accountId, item, source, receiver, pushContent, msgSource,
-                    userId, userName, bodyXml);
+                    userId, userName, bodyXml, properties);
         }
 
         if (userId == null || userId.isBlank()) {
@@ -159,6 +159,7 @@ public final class GolemMessageParser {
 
         Map<String, Object> extra = baseExtra(source, receiver, pushContent, msgSource, botMentioned, wechatType);
         extra.putAll(typeExtra);
+        stampOwner(extra, userId, properties);
         List<String> mentionIds = GolemMentionDetector.extractMentionIds(msgSource);
         if (!mentionIds.isEmpty()) {
             extra.put(ChannelExtraKeys.MENTION_IDS, mentionIds);
@@ -483,7 +484,7 @@ public final class GolemMessageParser {
 
     private static MsgInfo mapFriendVerify(String accountId, JsonNode item, String source, String receiver,
                                            String pushContent, String msgSource, String userId, String userName,
-                                           String bodyXml) {
+                                           String bodyXml, GolemProperties properties) {
         String fromUser = firstNonBlank(
                 xmlAttr(bodyXml, "fromusername"),
                 xmlAttr(bodyXml, "username"),
@@ -495,6 +496,7 @@ public final class GolemMessageParser {
         String content = firstNonBlank(xmlAttr(bodyXml, "content"), xmlAttr(bodyXml, "verifycontent"));
         Map<String, Object> friendExtra = baseExtra(source, receiver, pushContent, msgSource, false,
                 item.path("type").asInt(37));
+        stampOwner(friendExtra, fromUser, properties);
         friendExtra.put(ChannelExtraKeys.EVENT, "friend_verify");
         putIfPresent(friendExtra, ChannelExtraKeys.FRIEND_ID, fromUser);
         putIfPresent(friendExtra, ChannelExtraKeys.CARD_NICKNAME, nick);
@@ -775,6 +777,18 @@ public final class GolemMessageParser {
         extra.put("msgSource", msgSource == null ? "" : msgSource);
         extra.put("wechatType", wechatType);
         return extra;
+    }
+
+    /** 与配置的主人 id 比对；命中才打标，前缀出现单词 owner。 */
+    private static void stampOwner(Map<String, Object> extra, String userId, GolemProperties properties) {
+        if (extra == null || properties == null) {
+            return;
+        }
+        String ownerId = properties.getOwnerWechatId() == null ? "" : properties.getOwnerWechatId().trim();
+        String uid = userId == null ? "" : userId.trim();
+        if (!ownerId.isEmpty() && ownerId.equals(uid)) {
+            extra.put(ChannelExtraKeys.OWNER, true);
+        }
     }
 
     private static String buildMsgId(JsonNode item, String receiver, String userId, String groupId) {
