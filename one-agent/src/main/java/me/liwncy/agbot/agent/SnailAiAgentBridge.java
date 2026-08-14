@@ -68,7 +68,10 @@ public class SnailAiAgentBridge implements AgentBridge {
         String externalId = SessionKeys.externalUserId(msgInfo);
         String openId;
         try {
-            openId = client.ensureOpenId(externalId, msgInfo.userName());
+            String nickname = msgInfo.isPrivateChat()
+                    ? msgInfo.userName()
+                    : firstNonBlank(msgInfo.groupName(), msgInfo.groupId());
+            openId = client.ensureOpenId(externalId, nickname);
         } catch (Exception e) {
             throw wrapStage("ensureOpenId", e);
         }
