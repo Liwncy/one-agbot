@@ -17,6 +17,8 @@ final class StreamReplyFlusher {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern EMOJI_TOKEN = Pattern.compile(
             "(?i)emoji:[0-9a-f]{32}(?:[ \\t]+https?://\\S+)?");
+    private static final Pattern CARD_LINE = Pattern.compile(
+            "(?im)^(?:link:|music:|app:\\d+\\s).+$");
 
     private final StringBuilder buffer = new StringBuilder();
     private final int minChars;
@@ -66,6 +68,10 @@ final class StreamReplyFlusher {
     }
 
     private int findCut(String text, boolean forceBoundary) {
+        int cardCut = cutAfterCompleteCardLine(text);
+        if (cardCut > 0) {
+            return cardCut;
+        }
         if (hasIncompleteTrailingUrl(text) && !forceBoundary) {
             // 仅当中间已有可独立发出的完整媒体链时切开
             return cutAfterCompleteMediaUrl(text, false);
@@ -95,6 +101,21 @@ final class StreamReplyFlusher {
 
         // 不再按句号 / 单换行切分；剩余文本在 finish() 时整段发出。
         return -1;
+    }
+
+    private int cutAfterCompleteCardLine(String text) {
+        Matcher m = CARD_LINE.matcher(text);
+        int cut = -1;
+        while (m.find()) {
+            if (AgentOutboundCards.parseLine(m.group()) == null) {
+                continue;
+            }
+            boolean followed = m.end() < text.length() && isUrlTerminator(text.charAt(m.end()));
+            if (followed) {
+                cut = m.end();
+            }
+        }
+        return cut;
     }
 
     private int cutAfterCompleteEmojiToken(String text) {
@@ -154,14 +175,16 @@ final class StreamReplyFlusher {
         }
     }
 
-    /** 有图/视频/表情协议时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
+    /** 有图/视频/表情/卡片协议时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
     private static List<String> splitKeepMedia(String part) {
-        AgentOutboundEmoji.Split emojis = AgentOutboundEmoji.split(part);
-        String afterEmoji = emojis.hasEmojis() ? emojis.remainingText() : part;
+        AgentOutboundCards.Split cards = AgentOutboundCards.split(part);
+        String afterCards = cards.hasCards() ? cards.remainingText() : part;
+        AgentOutboundEmoji.Split emojis = AgentOutboundEmoji.split(afterCards);
+        String afterEmoji = emojis.hasEmojis() ? emojis.remainingText() : afterCards;
         AgentOutboundImages.Split images = AgentOutboundImages.split(afterEmoji);
         AgentOutboundVideos.Split videos = AgentOutboundVideos.split(
                 images.hasImages() ? images.remainingText() : afterEmoji);
-        if (!emojis.hasEmojis() && !images.hasImages() && !videos.hasVideos()) {
+        if (!cards.hasCards() && !emojis.hasEmojis() && !images.hasImages() && !videos.hasVideos()) {
             return List.of(part);
         }
         List<String> out = new ArrayList<>();
@@ -170,6 +193,11 @@ final class StreamReplyFlusher {
                 : (images.hasImages() ? images.remainingText() : afterEmoji);
         if (caption != null && !caption.isBlank()) {
             out.add(caption);
+        }
+        if (cards.hasCards()) {
+            for (AgentOutboundCards.Ref ref : cards.cards()) {
+                out.add(ref.toLine());
+            }
         }
         if (emojis.hasEmojis()) {
             for (AgentOutboundEmoji.Ref ref : emojis.emojis()) {

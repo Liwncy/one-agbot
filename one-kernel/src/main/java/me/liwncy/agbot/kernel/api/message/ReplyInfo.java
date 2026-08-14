@@ -57,7 +57,19 @@ public record ReplyInfo(
     }
 
     public static ReplyInfo link(String title, String desc, String url, MsgInfo inbound) {
-        return merge(of(MsgType.LINK, desc, null, null, title, url), inbound);
+        return link(title, desc, url, null, inbound);
+    }
+
+    public static ReplyInfo link(String title, String desc, String url, String thumb, MsgInfo inbound) {
+        Map<String, Object> extra = new HashMap<>();
+        extra.put(ChannelExtraKeys.THUMB, thumb == null ? "" : thumb);
+        return merge(of(MsgType.LINK, desc, null, null, title, url, extra), inbound);
+    }
+
+    public static ReplyInfo app(int appType, String xml, MsgInfo inbound) {
+        Map<String, Object> extra = new HashMap<>();
+        extra.put(ChannelExtraKeys.APP_TYPE, appType);
+        return merge(of(MsgType.APP, xml, null, null, null, null, extra), inbound);
     }
 
     public static ReplyInfo of(String type, String msg, String path,

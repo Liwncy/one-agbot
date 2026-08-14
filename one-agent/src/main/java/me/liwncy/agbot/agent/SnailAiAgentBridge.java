@@ -208,6 +208,10 @@ public class SnailAiAgentBridge implements AgentBridge {
             pushEmojiOrFallback(runtime, msgInfo, AgentOutboundEmoji.parseLine(trimmed));
             return;
         }
+        if (AgentOutboundCards.looksLikeCardLine(trimmed)) {
+            pushCardOrFallback(runtime, msgInfo, AgentOutboundCards.parseLine(trimmed));
+            return;
+        }
         if (AgentOutboundImages.looksLikeImageUrl(trimmed)) {
             pushImageOrFallback(runtime, msgInfo, trimmed);
             return;
@@ -217,6 +221,34 @@ public class SnailAiAgentBridge implements AgentBridge {
             return;
         }
         pushText(runtime, msgInfo, part, true);
+    }
+
+    private void pushCardOrFallback(AdapterRuntime runtime, MsgInfo msgInfo, AgentOutboundCards.Ref ref) {
+        if (ref == null || !ref.hasTarget()) {
+            return;
+        }
+        try {
+            ReplyInfo reply = ref.toReply(msgInfo);
+            runtime.push(msgInfo.platform(), reply).join();
+            log.info("Agent stream push type={} userId={} preview={}",
+                    reply.type(), msgInfo.userId(), preview(ref.preview(), 160));
+            return;
+        } catch (Exception e) {
+            log.warn("Agent stream send card failed, fallback link userId={} preview={} err={}",
+                    msgInfo.userId(), preview(ref.preview(), 160), e.toString());
+        }
+        ReplyInfo fallback = ref.toLinkFallback(msgInfo);
+        if (fallback == null) {
+            return;
+        }
+        try {
+            runtime.push(msgInfo.platform(), fallback).join();
+            log.info("Agent stream push type=link(fallback) userId={} preview={}",
+                    msgInfo.userId(), preview(ref.preview(), 160));
+        } catch (Exception e) {
+            log.warn("Agent stream card link fallback failed, skip xml dump userId={} err={}",
+                    msgInfo.userId(), e.toString());
+        }
     }
 
     private void pushEmojiOrFallback(AdapterRuntime runtime, MsgInfo msgInfo, AgentOutboundEmoji.Ref ref) {

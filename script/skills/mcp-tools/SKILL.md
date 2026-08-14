@@ -5,7 +5,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 # MCP 工具用法
 
-仍是一份技能，按领域写细。系统提示词只做人设，这里管「何时调、怎么填、怎么回」。
+仍是一份技能，按领域写细。系统提示词只做人设，这里管「何时调、怎么填」。发出去看「怎么回消息」。
 
 ## 通用
 
@@ -17,7 +17,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 - 没拿到成功结果前，不要说已经做好了，也不要编细节
 - 禁止编造、拼接、猜测任何媒体链接；禁止拿历史旧链接顶替本次结果
 - 工具返回的 JSON、字段名、错误码、堆栈不要原文甩给用户，只说人话
-- 回图/视频：一句配文 + 下一行裸链接，不要 Markdown
+- 工具给了图/视频/表情/卡片结果：按「怎么回消息」发出去，不要在这里发明格式
 - 闲聊、接话、问好：不调工具
 - 人设切换看「人设模式」技能，不在这里切
 - `echo`、`get_current_time`、`random_cat_image`：对方明确要才用
@@ -62,10 +62,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 想发反应图、梗图、表情：先 `emoji_search`（中文搜 description/tags，如 无奈、猫）。不要编 md5，不要让用户背名字。
 
-发出去：
-
-- 有 `md5`：单独一行 `emoji:<md5>`，同一行可再跟 `imageUrl`（能发明文表情的通道用 md5）
-- 没有 md5：一句配文 + 下一行 `imageUrl` 当普通图
+发出去：按「怎么回消息」。有 `md5` 发表情，没有就当普通图。
 
 写库：
 
@@ -103,7 +100,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 结果：
 
-- `matched=true`：按 `kind` 用人话转发 `value`（text 直说；image/voice 贴链接；app/link 把 value/meta 交给宿主，不要改写成假内容）
+- `matched=true`：按 `kind` 用人话转发 `value`（text 直说；image/voice/link/app 按「怎么回消息」发；不要改写成假内容、不要念 JSON）
 - `matched=false` 或失败：自己聊，或改用画图/玩法等专用工具；不要编造
 
 `rule_list` 只在这两种情况用：对方问「你还能干啥 / 有哪些口令」，或 execute 连续 miss 想确认目录里有没有。可带 `query` 搜 description。普通人不要改规则库，`includeInactive` 默认不要开。
