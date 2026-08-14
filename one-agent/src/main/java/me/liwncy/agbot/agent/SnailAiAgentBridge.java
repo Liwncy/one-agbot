@@ -57,8 +57,8 @@ public class SnailAiAgentBridge implements AgentBridge {
                 return doHandle(msgInfo);
             } catch (Exception e) {
                 String reply = AgentUserReply.fromThrowable(e);
-                log.warn("Agent handle failed, reply friendly userId={} reply={} err={}",
-                        msgInfo.userId(), reply, e.toString());
+                log.warn("Agent handle failed, reply friendly userId={} reply={} root={}",
+                        msgInfo.userId(), reply, rootMessage(e), e);
                 return new AgentOutcome.Reply(ReplyInfo.text(reply, msgInfo));
             }
         });
@@ -66,8 +66,18 @@ public class SnailAiAgentBridge implements AgentBridge {
 
     private AgentOutcome doHandle(MsgInfo msgInfo) {
         String externalId = SessionKeys.externalUserId(msgInfo);
-        String openId = client.ensureOpenId(externalId, msgInfo.userName());
-        String conversationId = conversationMapper.resolveConversationId(SessionKeys.of(msgInfo));
+        String openId;
+        try {
+            openId = client.ensureOpenId(externalId, msgInfo.userName());
+        } catch (Exception e) {
+            throw wrapStage("ensureOpenId", e);
+        }
+        String conversationId;
+        try {
+            conversationId = conversationMapper.resolveConversationId(SessionKeys.of(msgInfo));
+        } catch (Exception e) {
+            throw wrapStage("resolveConversationId", e);
+        }
         AgentUserInput input = AgentMessageFormatter.from(msgInfo);
 
         List<Long> imageIds = new ArrayList<>();
@@ -123,8 +133,8 @@ public class SnailAiAgentBridge implements AgentBridge {
             }
         } catch (Exception e) {
             answer = AgentUserReply.fromThrowable(e);
-            log.warn("Agent chat failed, reply friendly openId={} conversationId={} reply={} err={}",
-                    openId, conversationId, answer, e.toString());
+            log.warn("Agent chat failed, reply friendly openId={} conversationId={} reply={} root={}",
+                    openId, conversationId, answer, rootMessage(e), e);
         }
         log.info("Agent reply openId={} conversationId={} userId={} userName={} answer={}",
                 openId, conversationId, msgInfo.userId(), msgInfo.userName(), preview(answer));
@@ -161,8 +171,8 @@ public class SnailAiAgentBridge implements AgentBridge {
             flusher.finish();
         } catch (Exception e) {
             String friendly = AgentUserReply.fromThrowable(e);
-            log.warn("Agent stream failed openId={} conversationId={} sent={} reply={} err={}",
-                    openId, conversationId, sent.get(), friendly, e.toString());
+            log.warn("Agent stream failed openId={} conversationId={} sent={} reply={} root={}",
+                    openId, conversationId, sent.get(), friendly, rootMessage(e), e);
             if (sent.get() == 0) {
                 return new AgentOutcome.Reply(ReplyInfo.text(friendly, msgInfo));
             }
@@ -299,6 +309,33 @@ public class SnailAiAgentBridge implements AgentBridge {
         return text.startsWith("[ERROR]")
                 || lower.contains("stream processing failed")
                 || lower.contains("content is blocked");
+    }
+
+    private static RuntimeException wrapStage(String stage, Exception e) {
+        String root = rootMessage(e);
+        return new IllegalStateException(stage + " failed: " + root, e);
+    }
+
+    /** 剥掉代理包装，露出 Connection refused / 401 等真实信息。 */
+    private static String rootMessage(Throwable error) {
+        if (error == null) {
+            return "";
+        }
+        Throwable cur = error;
+        Throwable deepest = error;
+        int guard = 0;
+        while (cur != null && guard++ < 12) {
+            deepest = cur;
+            cur = cur.getCause();
+        }
+        String msg = deepest.getMessage();
+        if (msg == null || msg.isBlank()) {
+            msg = deepest.getClass().getSimpleName();
+        }
+        if (deepest != error) {
+            return deepest.getClass().getSimpleName() + ": " + msg;
+        }
+        return msg;
     }
 
     private static String mediaSummary(AgentUserInput input) {
