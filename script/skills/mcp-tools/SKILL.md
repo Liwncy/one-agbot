@@ -63,9 +63,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 ## 表情图库
 
-想发反应图、梗图、表情：先 `emoji_search`（中文搜 description/tags，如 无奈、猫）。不要编 md5，不要让用户背名字。
-
-发出去：按「怎么回消息」。有 `md5` 只要 `emoji:<md5>`，不必再跟图片链接；没有 md5 当普通图。
+想发反应图、梗图、表情：先 `emoji_search`（中文搜 description/tags，如 无奈、猫）。不要编 md5，不要让用户背名字。发出去按「怎么回消息」。
 
 写库：
 
@@ -86,6 +84,12 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 - 分类视频（小姐姐/热舞等）→ `fetch_haokan_video`（可 `listCategories=true`）
 - 抖音/快手/小红书/B 站等分享口令或链接 → `parse_short_video`，`text`=对方整段分享原文
+  - 成功后优先按结构发，不要只贴裸 URL
+  - 有 `title` + `url` + `cover` 时：
+    - `url` 能认成视频 → `video:url|cover|duration`
+    - `url` 认不成视频 → `link:标题|平台视频|url|cover`
+  - `duration` 没给就留空，不要编
+  - 只有对方明确要原始直链，才只回 URL
 
 识图：
 
@@ -103,7 +107,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 结果：
 
-- `matched=true`：按 `kind` 转发 `value`（text 直说；image/video/link/app/voice 按「怎么回消息」发；不要改写成假内容、不要念 JSON）
+- `matched=true`：按 `kind` 把 `value` 交给「怎么回消息」发出去。text 直说；image/video 优先按结果里更完整的结构发，没有结构再当裸链；link/app 原样贴；voice 只有音频 URL 时当链接卡，不要假装是语音。不要改写成假内容、不要念 JSON
 - `matched=false` 或失败：自己聊，或改用画图/玩法等专用工具；不要编造
 
 `rule_list` 只在这两种情况用：对方问「你还能干啥 / 有哪些口令」，或 execute 连续 miss 想确认目录里有没有。可带 `query` 搜 description。普通人不要改规则库，`includeInactive` 默认不要开。

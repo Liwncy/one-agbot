@@ -220,10 +220,6 @@ public class SnailAiAgentBridge implements AgentBridge {
             pushVideoOrFallback(runtime, msgInfo, trimmed);
             return;
         }
-        if (AgentOutboundPageLinks.looksLikeHttpUrl(trimmed)) {
-            pushLink(runtime, msgInfo, "链接", "", trimmed);
-            return;
-        }
         pushText(runtime, msgInfo, part, true);
     }
 

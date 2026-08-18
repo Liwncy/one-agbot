@@ -197,22 +197,18 @@ public class GolemAdapter implements ChatAdapter {
     }
 
     /**
-     * 文本里的 URL：能认的图/视频走媒体，其余发链接卡片；发送失败也降成卡片。
+     * 文本里的 URL：能认的图/视频走媒体；其余保持原文本，交给上游明确决定是否发卡片。
      */
     private String sendTextMaybeAsMedia(String receiver, String content, String remind) {
         OutboundImageLinks.Split images = OutboundImageLinks.split(content);
         OutboundVideoLinks.Split videos = OutboundVideoLinks.split(
                 images.hasImages() ? images.remainingText() : content);
-        String afterMedia = videos.hasVideos()
-                ? videos.remainingText()
-                : (images.hasImages() ? images.remainingText() : content);
-        OutboundPageLinks.Split pages = OutboundPageLinks.split(afterMedia);
-        if (!images.hasImages() && !videos.hasVideos() && !pages.hasPages()) {
+        if (!images.hasImages() && !videos.hasVideos()) {
             return apiClient.sendText(receiver, content, remind);
         }
 
         String lastMsgId = "";
-        String caption = pages.hasPages() ? pages.remainingText() : afterMedia;
+        String caption = videos.hasVideos() ? videos.remainingText() : images.remainingText();
         if (caption != null && !caption.isBlank()) {
             lastMsgId = apiClient.sendText(receiver, caption, remind);
         }
@@ -224,11 +220,6 @@ public class GolemAdapter implements ChatAdapter {
         if (videos.hasVideos()) {
             for (String videoUrl : videos.videoUrls()) {
                 lastMsgId = sendVideoOrFallback(receiver, videoUrl, null, null);
-            }
-        }
-        if (pages.hasPages()) {
-            for (String pageUrl : pages.pageUrls()) {
-                lastMsgId = sendLinkCard(receiver, "链接", "", pageUrl);
             }
         }
         return lastMsgId;

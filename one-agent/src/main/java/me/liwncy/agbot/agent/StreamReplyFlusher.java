@@ -18,7 +18,7 @@ final class StreamReplyFlusher {
     private static final Pattern EMOJI_TOKEN = Pattern.compile(
             "(?i)emoji:[0-9a-f]{32}(?:[ \\t]+https?://\\S+)?");
     private static final Pattern CARD_LINE = Pattern.compile(
-            "(?im)^(?:link:|music:|app:\\d+\\s).+$");
+            "(?im)^(?:link:|music:|video:|app:\\d+\\s).+$");
 
     private final StringBuilder buffer = new StringBuilder();
     private final int minChars;
@@ -175,7 +175,7 @@ final class StreamReplyFlusher {
         }
     }
 
-    /** 有图/视频/表情/卡片/未标明 URL 时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
+    /** 有图/视频/表情/卡片时尽量「配文 / 媒体」分开回调，便于通道分别发送。 */
     private static List<String> splitKeepMedia(String part) {
         AgentOutboundCards.Split cards = AgentOutboundCards.split(part);
         String afterCards = cards.hasCards() ? cards.remainingText() : part;
@@ -184,16 +184,13 @@ final class StreamReplyFlusher {
         AgentOutboundImages.Split images = AgentOutboundImages.split(afterEmoji);
         AgentOutboundVideos.Split videos = AgentOutboundVideos.split(
                 images.hasImages() ? images.remainingText() : afterEmoji);
-        String afterMedia = videos.hasVideos()
-                ? videos.remainingText()
-                : (images.hasImages() ? images.remainingText() : afterEmoji);
-        AgentOutboundPageLinks.Split pages = AgentOutboundPageLinks.split(afterMedia);
-        if (!cards.hasCards() && !emojis.hasEmojis() && !images.hasImages()
-                && !videos.hasVideos() && !pages.hasPages()) {
+        if (!cards.hasCards() && !emojis.hasEmojis() && !images.hasImages() && !videos.hasVideos()) {
             return List.of(part);
         }
         List<String> out = new ArrayList<>();
-        String caption = pages.hasPages() ? pages.remainingText() : afterMedia;
+        String caption = videos.hasVideos()
+                ? videos.remainingText()
+                : (images.hasImages() ? images.remainingText() : afterEmoji);
         if (caption != null && !caption.isBlank()) {
             out.add(caption);
         }
@@ -216,9 +213,6 @@ final class StreamReplyFlusher {
         }
         if (videos.hasVideos()) {
             out.addAll(videos.videoUrls());
-        }
-        if (pages.hasPages()) {
-            out.addAll(pages.pageUrls());
         }
         return out;
     }
