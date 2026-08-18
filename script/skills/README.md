@@ -5,7 +5,7 @@
 建议绑三个技能：
 
 - `mcp-tools/SKILL.md`：何时调哪个 MCP 工具
-- `outbound-reply/SKILL.md`：回图/视频/表情/链接卡片/音乐卡片的出站协议
+- `outbound-reply/SKILL.md`：URL 怎么发（标明类型 / 图视频 / 其余或失败走链接卡）；表情与转发记录
 - `roleplay-modes/SKILL.md`：切人设 `mode_set`，之后按上次返回的 instruction 演；维护仅前缀 `owner`
 
 MCP 加了新工具：在 `mcp-tools/SKILL.md` 的表里补一行，不要写回 `sai_agent.instruction`。

@@ -103,7 +103,7 @@ description: 小聪明儿调用 cf-mcp-tools 的分流、参数与回法。闲�
 
 结果：
 
-- `matched=true`：按 `kind` 用人话转发 `value`（text 直说；image/voice/link/app 按「怎么回消息」发；不要改写成假内容、不要念 JSON）
+- `matched=true`：按 `kind` 转发 `value`（text 直说；image/video/link/app/voice 按「怎么回消息」发；不要改写成假内容、不要念 JSON）
 - `matched=false` 或失败：自己聊，或改用画图/玩法等专用工具；不要编造
 
 `rule_list` 只在这两种情况用：对方问「你还能干啥 / 有哪些口令」，或 execute 连续 miss 想确认目录里有没有。可带 `query` 搜 description。普通人不要改规则库，`includeInactive` 默认不要开。

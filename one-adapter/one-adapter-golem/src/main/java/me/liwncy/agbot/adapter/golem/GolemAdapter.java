@@ -118,11 +118,11 @@ public class GolemAdapter implements ChatAdapter {
         String msgId = switch (type) {
             case MsgType.TEXT -> sendTextMaybeAsMedia(receiver, replyInfo.msg(), replyInfo.remind());
             case MsgType.IMAGE -> sendImageOrFallback(receiver, path);
-            case MsgType.VIDEO -> apiClient.sendVideo(
+            case MsgType.VIDEO -> sendVideoOrFallback(
                     receiver, path,
                     stringExtra(extra, ChannelExtraKeys.THUMB),
                     stringExtra(extra, ChannelExtraKeys.DURATION));
-            case MsgType.AUDIO -> apiClient.sendVoice(
+            case MsgType.AUDIO -> sendVoiceOrFallback(
                     receiver, path,
                     stringExtra(extra, ChannelExtraKeys.DURATION),
                     stringExtra(extra, ChannelExtraKeys.FORMAT));
@@ -170,45 +170,65 @@ public class GolemAdapter implements ChatAdapter {
             return apiClient.sendImage(receiver, imageUrl);
         } catch (Exception e) {
             log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
-            return apiClient.sendText(receiver, imageUrl == null ? "" : imageUrl, null);
+            return sendLinkCard(receiver, "图片", "点开看看", imageUrl);
         }
     }
 
+    private String sendVideoOrFallback(String receiver, String videoUrl, String thumb, String duration) {
+        try {
+            return apiClient.sendVideo(receiver, videoUrl, thumb, duration);
+        } catch (Exception e) {
+            log.warn("Golem sendVideo failed url={} err={}", preview(videoUrl), e.toString());
+            return sendLinkCard(receiver, "视频", "点开看看", videoUrl);
+        }
+    }
+
+    private String sendVoiceOrFallback(String receiver, String voiceUrl, String duration, String format) {
+        try {
+            return apiClient.sendVoice(receiver, voiceUrl, duration, format);
+        } catch (Exception e) {
+            log.warn("Golem sendVoice failed url={} err={}", preview(voiceUrl), e.toString());
+            return sendLinkCard(receiver, "语音", "点开看看", voiceUrl);
+        }
+    }
+
+    private String sendLinkCard(String receiver, String title, String desc, String url) {
+        return apiClient.sendLink(receiver, title, desc, url, null);
+    }
+
     /**
-     * Agent 常把媒体结果以文字 URL 返回；识别后改走图片/视频消息，避免微信文本截断长链。
+     * 文本里的 URL：能认的图/视频走媒体，其余发链接卡片；发送失败也降成卡片。
      */
     private String sendTextMaybeAsMedia(String receiver, String content, String remind) {
         OutboundImageLinks.Split images = OutboundImageLinks.split(content);
         OutboundVideoLinks.Split videos = OutboundVideoLinks.split(
                 images.hasImages() ? images.remainingText() : content);
-        if (!images.hasImages() && !videos.hasVideos()) {
+        String afterMedia = videos.hasVideos()
+                ? videos.remainingText()
+                : (images.hasImages() ? images.remainingText() : content);
+        OutboundPageLinks.Split pages = OutboundPageLinks.split(afterMedia);
+        if (!images.hasImages() && !videos.hasVideos() && !pages.hasPages()) {
             return apiClient.sendText(receiver, content, remind);
         }
 
         String lastMsgId = "";
-        String caption = videos.hasVideos() ? videos.remainingText() : images.remainingText();
+        String caption = pages.hasPages() ? pages.remainingText() : afterMedia;
         if (caption != null && !caption.isBlank()) {
             lastMsgId = apiClient.sendText(receiver, caption, remind);
         }
         if (images.hasImages()) {
             for (String imageUrl : images.imageUrls()) {
-                try {
-                    lastMsgId = apiClient.sendImage(receiver, imageUrl);
-                } catch (Exception e) {
-                    log.warn("Golem sendImage failed url={} err={}", preview(imageUrl), e.toString());
-                    lastMsgId = apiClient.sendText(receiver, imageUrl, null);
-                }
+                lastMsgId = sendImageOrFallback(receiver, imageUrl);
             }
         }
         if (videos.hasVideos()) {
             for (String videoUrl : videos.videoUrls()) {
-                try {
-                    lastMsgId = apiClient.sendVideo(receiver, videoUrl, null, null);
-                } catch (Exception e) {
-                    log.warn("Golem sendVideo failed url={} err={}", preview(videoUrl), e.toString());
-                    // 勿再走文本媒体识别，否则会二次 sendVideo；降级为链接卡片
-                    lastMsgId = apiClient.sendLink(receiver, "视频", "点开看看", videoUrl, null);
-                }
+                lastMsgId = sendVideoOrFallback(receiver, videoUrl, null, null);
+            }
+        }
+        if (pages.hasPages()) {
+            for (String pageUrl : pages.pageUrls()) {
+                lastMsgId = sendLinkCard(receiver, "链接", "", pageUrl);
             }
         }
         return lastMsgId;
