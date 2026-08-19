@@ -1,6 +1,33 @@
 name: one-agbot
 
 services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: one_agbot_mysql
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-one-agbot}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-23306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../script/sql/one_agbot_ai.sql:/docker-entrypoint-initdb.d/01-one_agbot_ai.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: always
+    networks:
+      - agbot_net
+
   redis:
     image: redis:7.2-alpine
     container_name: one_agbot_redis
@@ -22,19 +49,20 @@ services:
     environment:
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
-      DB_HOST: ${MYSQL_HOST}
-      DB_PORT: ${MYSQL_PORT}
-      DB_NAME: ${MYSQL_DATABASE}
-      DB_USER: ${MYSQL_USERNAME}
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE:-one-agbot}
+      DB_USER: root
       DB_PASSWORD: ${MYSQL_PASSWORD}
       SNAIL_AI_CRYPTO_KEY: ${SNAIL_AI_CRYPTO_KEY}
       SNAIL_AI_CRYPTO_IV: ${SNAIL_AI_CRYPTO_IV}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ../upload:/app/upload
     depends_on:
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8900/snail-ai/actuator/health"]
       interval: 15s
@@ -65,8 +93,6 @@ services:
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       snailai-server:
         condition: service_healthy
@@ -83,6 +109,7 @@ services:
       - agbot_net
 
 volumes:
+  mysql-data:
   redis-data:
 
 networks:
