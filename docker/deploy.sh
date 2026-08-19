@@ -40,6 +40,8 @@ else
 fi
 
 echo "[deploy] compose up --build（首次 10～20 分钟，宝塔 Webhook 超时请设 1800 秒）"
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
 "${COMPOSE[@]}" up -d --build
 
 echo "[deploy] wait health"

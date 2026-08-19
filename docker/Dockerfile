@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # 多阶段：一次 Maven 打出 boot + snailai-server 两个 jar
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
@@ -10,7 +11,9 @@ COPY one-adapter one-adapter
 COPY one-boot one-boot
 COPY one-extend one-extend
 
-RUN mvn -B -DskipTests clean package
+# /root/.m2 挂 BuildKit 缓存，改代码不会把依赖层一起丢掉
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests package
 
 FROM eclipse-temurin:21-jre AS boot
 WORKDIR /app
