@@ -101,7 +101,7 @@ services:
       redis:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8088/"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8088/health"]
       interval: 15s
       timeout: 5s
       retries: 8
