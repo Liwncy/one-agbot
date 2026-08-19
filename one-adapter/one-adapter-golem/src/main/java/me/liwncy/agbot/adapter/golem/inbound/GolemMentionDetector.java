@@ -129,8 +129,8 @@ public final class GolemMentionDetector {
         if (isAddressedToOthersOnly(mentionIds, botWechatId)) {
             return true;
         }
-        return textAtsOthersOnly(content, botWechatId, botWechatName)
-                || textAtsOthersOnly(pushContent, botWechatId, botWechatName);
+        // 只扫正文。push_content 常见「昵称@chatroom : 消息」，@chatroom 不是在 @ 别人。
+        return textAtsOthersOnly(content, botWechatId, botWechatName);
     }
 
     /**
@@ -144,7 +144,7 @@ public final class GolemMentionDetector {
         boolean botMentioned = false;
         boolean others = false;
         for (String id : mentionIds) {
-            if (id == null || id.isBlank()) {
+            if (id == null || id.isBlank() || isNonPersonMention(id)) {
                 continue;
             }
             if (!botId.isEmpty() && id.equalsIgnoreCase(botId)) {
@@ -210,7 +210,7 @@ public final class GolemMentionDetector {
         Matcher matcher = AT_TOKEN.matcher(text);
         while (matcher.find()) {
             String token = cleanAtToken(matcher.group(1));
-            if (token.isEmpty() || "所有人".equals(token) || "all".equalsIgnoreCase(token)) {
+            if (token.isEmpty() || isNonPersonMention(token)) {
                 continue;
             }
             boolean isBot = (!botId.isEmpty() && token.equalsIgnoreCase(botId))
@@ -223,6 +223,19 @@ public final class GolemMentionDetector {
             }
         }
         return others && !bot;
+    }
+
+    /** 群 id / @所有人，不是在跟某个群员说话。 */
+    private static boolean isNonPersonMention(String token) {
+        if (token == null || token.isBlank()) {
+            return true;
+        }
+        String t = token.trim();
+        return "所有人".equals(t)
+                || "all".equalsIgnoreCase(t)
+                || "chatroom".equalsIgnoreCase(t)
+                || t.endsWith("@chatroom")
+                || "notify@all".equalsIgnoreCase(t);
     }
 
     private static String cleanAtToken(String raw) {
