@@ -32,6 +32,8 @@ services:
     image: redis:7.2-alpine
     container_name: one_agbot_redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "${REDIS_PUBLISH_PORT:-26379}:6379"
     volumes:
       - redis-data:/data
     restart: always
