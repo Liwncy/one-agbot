@@ -1,0 +1,15 @@
+.git
+.cursor
+.idea
+.vscode
+**/.DS_Store
+**/*.iml
+**/*.log
+**/target
+**/.flattened-pom.xml
+**/application-local.yml
+docker/.env
+data
+logs
+upload
+tmp

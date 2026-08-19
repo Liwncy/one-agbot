@@ -1,0 +1,90 @@
+name: one-agbot
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: one_agbot_redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis-data:/data
+    restart: always
+    networks:
+      - agbot_net
+
+  snailai-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: snailai-server
+    container_name: one_agbot_snailai
+    ports:
+      - "${SNAILAI_HTTP_PORT:-8900}:8900"
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${MYSQL_HOST}
+      DB_PORT: ${MYSQL_PORT}
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USERNAME}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      SNAIL_AI_CRYPTO_KEY: ${SNAIL_AI_CRYPTO_KEY}
+      SNAIL_AI_CRYPTO_IV: ${SNAIL_AI_CRYPTO_IV}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../upload:/app/upload
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8900/snail-ai/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: always
+    networks:
+      - agbot_net
+
+  boot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: boot
+    container_name: one_agbot_boot
+    ports:
+      - "${BOOT_PORT:-8088}:8088"
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SNAIL_AI_TOKEN: ${SNAIL_AI_TOKEN}
+      SNAIL_AI_SERVER_HOST: snailai-server
+      SNAIL_AI_SERVER_PORT: "18888"
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      snailai-server:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8088/"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+    restart: always
+    networks:
+      - agbot_net
+
+volumes:
+  redis-data:
+
+networks:
+  agbot_net:
+    driver: bridge
