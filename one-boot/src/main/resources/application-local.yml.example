@@ -1,5 +1,7 @@
 # 复制为 application-local.yml 后填写（application-local.yml 已 gitignore，勿提交）
 spring:
+  datasource:
+    password: your-mysql-password
   data:
     redis:
       password: your-redis-password

@@ -18,6 +18,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ../script/sql/one_agbot_ai.sql:/docker-entrypoint-initdb.d/01-one_agbot_ai.sql:ro
+      - ../script/sql/agbot_chat_message.sql:/docker-entrypoint-initdb.d/02-agbot_chat_message.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_PASSWORD}"]
       interval: 10s
@@ -92,6 +93,12 @@ services:
       SNAIL_AI_TOKEN: ${SNAIL_AI_TOKEN}
       SNAIL_AI_SERVER_HOST: snailai-server
       SNAIL_AI_SERVER_PORT: "18888"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE:-one-agbot}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
@@ -100,6 +107,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      mysql:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8088/health"]
       interval: 15s

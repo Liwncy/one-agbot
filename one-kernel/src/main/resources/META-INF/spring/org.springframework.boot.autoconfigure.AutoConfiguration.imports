@@ -1,1 +1,2 @@
 me.liwncy.agbot.kernel.support.KernelAutoConfiguration
+me.liwncy.agbot.kernel.chatlog.ChatLogAutoConfiguration

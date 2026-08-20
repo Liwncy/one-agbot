@@ -24,6 +24,7 @@
 # MySQL
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS \`one-agbot\` DEFAULT CHARACTER SET utf8mb4;"
 mysql -u root -p one-agbot < script/sql/one_agbot_ai.sql
+mysql -u root -p one-agbot < script/sql/agbot_chat_message.sql
 
 # PostgreSQL（可选）
 # psql -U postgres -d one-agbot -f script/sql/postgres/postgres_one_agbot_ai.sql

@@ -8,6 +8,7 @@ import me.liwncy.agbot.kernel.api.agent.AgentOutcome;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,10 +27,16 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
     private final Map<String, ChatAdapter> adapters = new ConcurrentHashMap<>();
     private final AgentBridge agentBridge;
     private final KernelProperties properties;
+    private final ChatLogService chatLog;
 
     public DefaultAdapterRuntime(AgentBridge agentBridge, KernelProperties properties) {
+        this(agentBridge, properties, null);
+    }
+
+    public DefaultAdapterRuntime(AgentBridge agentBridge, KernelProperties properties, ChatLogService chatLog) {
         this.agentBridge = agentBridge;
         this.properties = properties;
+        this.chatLog = chatLog;
     }
 
     @Override
@@ -76,7 +83,9 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
                 ReplyInfo merged = ReplyInfo.merge(reply.replyInfo(), msgInfo);
                 ChannelLog.outbound(msgInfo.platform(), msgInfo.accountId(),
                         "type=" + merged.type() + " msg=" + merged.msg());
-                return adapter.reply(merged).thenApply(msgId -> merged);
+                return adapter.reply(merged).whenComplete((msgId, err) ->
+                        recordOutbound(adapter.platform(), merged, msgId, err == null ? "sent" : "failed")
+                ).thenApply(msgId -> merged);
             }
             return CompletableFuture.completedFuture(null);
         });
@@ -90,7 +99,8 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
         }
         ChannelLog.outbound(platform, replyInfo.accountId(),
                 "push type=" + replyInfo.type() + " msg=" + replyInfo.msg());
-        return adapter.push(replyInfo);
+        return adapter.push(replyInfo).whenComplete((msgId, err) ->
+                recordOutbound(adapter.platform(), replyInfo, msgId, err == null ? "sent" : "failed"));
     }
 
     @Override
@@ -109,5 +119,16 @@ public class DefaultAdapterRuntime implements AdapterRuntime {
             throw new ServiceException("adapter not found: " + platform);
         }
         return adapter;
+    }
+
+    private void recordOutbound(String adapterId, ReplyInfo replyInfo, String msgId, String status) {
+        if (chatLog == null) {
+            return;
+        }
+        try {
+            chatLog.recordOutbound(adapterId, replyInfo, msgId, status);
+        } catch (Exception e) {
+            log.warn("Chat log outbound failed adapter={} status={}: {}", adapterId, status, e.getMessage());
+        }
     }
 }

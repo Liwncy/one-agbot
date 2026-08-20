@@ -17,6 +17,14 @@
         </dependency>
         <dependency>
             <groupId>me.liwncy</groupId>
+            <artifactId>one-common-json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-mybatis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
             <artifactId>one-common-log</artifactId>
         </dependency>
         <dependency>

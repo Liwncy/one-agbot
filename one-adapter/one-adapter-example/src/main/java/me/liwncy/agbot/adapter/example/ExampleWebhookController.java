@@ -6,6 +6,8 @@ import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,10 +29,14 @@ public class ExampleWebhookController {
 
     private final AdapterRuntime runtime;
     private final ExampleAdapter adapter;
+    private final ChatLogService chatLog;
 
-    public ExampleWebhookController(AdapterRuntime runtime, ExampleAdapter adapter) {
+    public ExampleWebhookController(AdapterRuntime runtime,
+                                    ExampleAdapter adapter,
+                                    ObjectProvider<ChatLogService> chatLog) {
         this.runtime = runtime;
         this.adapter = adapter;
+        this.chatLog = chatLog.getIfAvailable();
     }
 
     @PostMapping("/{accountId}/message")
@@ -57,6 +63,7 @@ public class ExampleWebhookController {
                 System.currentTimeMillis(),
                 extra
         );
+        recordInbound(msg);
         try {
             runtime.receive(msg).get(5, TimeUnit.MINUTES);
         } catch (Exception e) {
@@ -152,6 +159,13 @@ public class ExampleWebhookController {
     }
 
     public record ExampleDelMsgRequest(List<String> msgIds) {
+    }
+
+    private void recordInbound(MsgInfo msg) {
+        if (chatLog == null) {
+            return;
+        }
+        chatLog.recordInbound(msg);
     }
 
     private static String blankToUuid(String msgId) {

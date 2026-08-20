@@ -4,6 +4,7 @@ import me.liwncy.agbot.kernel.api.adapter.ChatAdapter;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,8 +54,10 @@ public class KernelAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AdapterRuntime.class)
-    public AdapterRuntime adapterRuntime(AgentBridge agentBridge, KernelProperties properties) {
-        return new DefaultAdapterRuntime(agentBridge, properties);
+    public AdapterRuntime adapterRuntime(AgentBridge agentBridge,
+                                         KernelProperties properties,
+                                         ObjectProvider<ChatLogService> chatLog) {
+        return new DefaultAdapterRuntime(agentBridge, properties, chatLog.getIfAvailable());
     }
 
     @Bean

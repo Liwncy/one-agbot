@@ -15,8 +15,10 @@ import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
 import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,6 +52,7 @@ public class GolemWebhookController {
     private final GolemGroupModeCommandHandler groupModeCommandHandler;
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
+    private final ChatLogService chatLog;
 
     public GolemWebhookController(AdapterRuntime runtime,
                                   GolemProperties properties,
@@ -60,7 +63,8 @@ public class GolemWebhookController {
                                   GolemSessionCommandHandler sessionCommandHandler,
                                   GolemGroupModeCommandHandler groupModeCommandHandler,
                                   GolemOwnerCommandHandler ownerCommandHandler,
-                                  GolemMediaResolver mediaResolver) {
+                                  GolemMediaResolver mediaResolver,
+                                  ObjectProvider<ChatLogService> chatLog) {
         this.runtime = runtime;
         this.properties = properties;
         this.groupGate = groupGate;
@@ -71,6 +75,7 @@ public class GolemWebhookController {
         this.groupModeCommandHandler = groupModeCommandHandler;
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
+        this.chatLog = chatLog.getIfAvailable();
     }
 
     @PostMapping("/{accountId}/webhook")
@@ -107,6 +112,7 @@ public class GolemWebhookController {
             if (!botId.isEmpty() && botId.equals(msg.userId())) {
                 continue;
             }
+            recordInbound(msg);
 
             // 会话启停指令优先（未激活时也能「开始」）
             if (sessionCommandHandler.tryHandle(msg)) {
@@ -220,6 +226,18 @@ public class GolemWebhookController {
                 "modeCommands", modeCommands,
                 "ownerCommands", ownerCommands
         );
+    }
+
+    private void recordInbound(MsgInfo msg) {
+        if (chatLog == null) {
+            return;
+        }
+        try {
+            chatLog.recordInbound(msg);
+        } catch (Exception e) {
+            log.warn("Chat log inbound failed accountId={} msgId={}: {}",
+                    msg.accountId(), msg.msgId(), e.getMessage());
+        }
     }
 
     private static boolean isBotMentioned(MsgInfo msg) {
