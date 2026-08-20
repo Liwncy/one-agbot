@@ -2,7 +2,7 @@ name: one-agbot
 
 services:
   mysql:
-    image: mysql:8.0.36
+    image: docker.m.daocloud.io/library/mysql:8.0.36
     container_name: one_agbot_mysql
     command:
       - mysqld
@@ -30,7 +30,7 @@ services:
       - agbot_net
 
   redis:
-    image: redis:7.2-alpine
+    image: docker.m.daocloud.io/library/redis:7.2-alpine
     container_name: one_agbot_redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     ports:
