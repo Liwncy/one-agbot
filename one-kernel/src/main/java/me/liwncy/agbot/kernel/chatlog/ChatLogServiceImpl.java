@@ -1,5 +1,7 @@
 package me.liwncy.agbot.kernel.chatlog;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
@@ -12,6 +14,9 @@ import org.springframework.dao.DuplicateKeyException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class ChatLogServiceImpl implements ChatLogService {
     private static final Logger log = LoggerFactory.getLogger(ChatLogServiceImpl.class);
@@ -77,6 +82,48 @@ public class ChatLogServiceImpl implements ChatLogService {
         row.setReplyStatus(emptyToNull(replyStatus));
         row.setMsgTime(LocalDateTime.now());
         insertQuietly(row);
+    }
+
+    @Override
+    public List<ChatMessage> listRecent(ChatLogQuery query) {
+        if (query == null || query.sessionId() == null || query.sessionId().isBlank()) {
+            return List.of();
+        }
+        int limit = query.limit() < 1 ? 20 : Math.min(query.limit(), 50);
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, blankTo(query.accountId(), "default"));
+        wrapper.eq(ChatMessage::getSessionId, query.sessionId().trim());
+        if (query.platform() != null && !query.platform().isBlank()) {
+            wrapper.eq(ChatMessage::getPlatform, ChatLogChannels.channelPlatform(query.platform().trim()));
+        }
+        if (query.direction() != null && !query.direction().isBlank()) {
+            wrapper.eq(ChatMessage::getDirection, query.direction().trim());
+        }
+        if (query.since() != null) {
+            wrapper.ge(ChatMessage::getMsgTime, query.since());
+        }
+        wrapper.orderByDesc(ChatMessage::getId);
+        wrapper.last("LIMIT " + limit);
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<ChatMessage> chronological = new ArrayList<>(rows);
+        Collections.reverse(chronological);
+        return chronological;
+    }
+
+    @Override
+    public List<ChatMessage> listByMessageId(String accountId, String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return List.of();
+        }
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, blankTo(accountId, "default"));
+        wrapper.eq(ChatMessage::getMessageId, messageId.trim());
+        wrapper.orderByAsc(ChatMessage::getId);
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        return rows == null ? List.of() : rows;
     }
 
     private void insertQuietly(ChatMessage row) {

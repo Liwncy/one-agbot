@@ -19,5 +19,6 @@
         <module>one-common-redis</module>
         <module>one-common-log</module>
         <module>one-common-mybatis</module>
+        <module>one-common-mcp</module>
     </modules>
 </project>

@@ -43,6 +43,11 @@
                 <artifactId>one-common-mybatis</artifactId>
                 <version>${revision}</version>
             </dependency>
+            <dependency>
+                <groupId>me.liwncy</groupId>
+                <artifactId>one-common-mcp</artifactId>
+                <version>${revision}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 </project>

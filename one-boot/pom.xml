@@ -29,6 +29,10 @@
         </dependency>
         <dependency>
             <groupId>me.liwncy</groupId>
+            <artifactId>one-common-mcp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
             <artifactId>one-kernel</artifactId>
         </dependency>
         <dependency>

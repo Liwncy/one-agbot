@@ -6,7 +6,7 @@
 
 | 模块 | 职责 |
 |------|------|
-| `one-common-*` | BOM + core/json/web/redis/log/mybatis |
+| `one-common-*` | BOM + core/json/web/redis/log/mybatis/mcp |
 | `one-kernel` | 消息模型、`ChatAdapter` SPI、`AdapterRuntime`、`AgentBridge` 接口 |
 | `one-agent` | SnailAI OpenAPI 桥接实现 |
 | `one-adapter/*` | 平台适配器（`example` 联调、`golem` 微信个人号网关） |
@@ -124,3 +124,4 @@ agbot:
 - `agbot.kernel.max-message-age`：过旧消息丢弃
 - 默认排除 DataSource/MyBatis；Redis 默认开启（Boot 4：`DataRedisAutoConfiguration`）。需密码时设 `REDIS_PASSWORD`；连不上则会话激活/群开关改用本地文件
 - 本地联调需同时启动 `one-snailai-server` 与 `one-boot`（boot 兼做 OpenAPI 调用方 + Agent 执行器）
+- 框架 MCP：`spring.ai.mcp.server` 在 boot 的 `/mcp` 暴露 `agbot_chat_history` / `agbot_chat_get`。SnailAI 再绑一条 MCP（`script/sql/sai_mcp_one_agbot.sql`），与 cf-mcp-tools 并列。Docker 内 base_uri 用 `http://boot:8088`，本机用 `http://127.0.0.1:8088`。不要对公网暴露 `/mcp`。重新上传 `script/skills/mcp-tools/SKILL.md`。

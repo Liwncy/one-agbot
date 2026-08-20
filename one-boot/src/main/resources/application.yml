@@ -95,6 +95,21 @@ snail-ai:
     read-timeout-ms: 180000
     chat-timeout-ms: 300000
 
+# 框架 MCP Server（SnailAI 再绑一条 sai_mcp_server，与 cf-mcp-tools 并列）
+# Docker 内 SnailAI 填 http://boot:8088 ；本机联调填 http://127.0.0.1:8088
+# 不要对公网暴露 /mcp
+spring.ai.mcp:
+  server:
+    enabled: true
+    protocol: STREAMABLE
+    name: one-agbot
+    version: 0.1.0
+    type: SYNC
+    annotation-scanner:
+      enabled: true
+    streamable-http:
+      mcp-endpoint: /mcp
+
 logging:
   level:
     me.liwncy.agbot: INFO
