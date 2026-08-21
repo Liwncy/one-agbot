@@ -33,10 +33,10 @@ public enum GolemGroupRespondMode {
     public String tip() {
         return switch (this) {
             case MENTION -> "点到我或引用我才回（跟聊窗口内可免）";
-            case FULL -> "群里说话我都接";
+            case FULL -> "群里说话我都接；会话忙时只接点名";
             case RULE -> "只听白名单或关键词（点到我也能触发）";
-            case RANDOM -> "按概率偶尔接一句";
-            case SMART -> "点名/跟聊、规则命中或按概率都会接";
+            case RANDOM -> "按概率偶尔接一句；会话忙时不随机";
+            case SMART -> "点名/跟聊、规则命中或按概率都会接；会话忙时不随机";
         };
     }
 

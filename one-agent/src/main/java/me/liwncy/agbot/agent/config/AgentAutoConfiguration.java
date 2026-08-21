@@ -9,6 +9,8 @@ import me.liwncy.agbot.agent.SnailAiOpenApiClient;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
+import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
+import me.liwncy.agbot.kernel.support.KernelAutoConfiguration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -20,7 +22,7 @@ import org.springframework.context.annotation.Bean;
 /**
  * Agent 桥接自动配置：在官方 OpenAPI Client 就绪后装配 {@link AgentBridge}。
  */
-@AutoConfiguration(after = SnailAiOpenApiAutoConfiguration.class)
+@AutoConfiguration(after = {SnailAiOpenApiAutoConfiguration.class, KernelAutoConfiguration.class})
 @EnableConfigurationProperties(AgbotAgentProperties.class)
 @ConditionalOnProperty(prefix = "agbot.agent", name = "enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnBean({OpenApiUserClient.class, OpenApiChatClient.class, OpenApiAgentClient.class})
@@ -39,7 +41,8 @@ public class AgentAutoConfiguration {
     public AgentBridge agentBridge(SnailAiOpenApiClient client,
                                    ConversationMapper conversationMapper,
                                    AgbotAgentProperties properties,
-                                   ObjectProvider<AdapterRuntime> runtimeProvider) {
-        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider);
+                                   ObjectProvider<AdapterRuntime> runtimeProvider,
+                                   ConversationTurnGuard turnGuard) {
+        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider, turnGuard);
     }
 }

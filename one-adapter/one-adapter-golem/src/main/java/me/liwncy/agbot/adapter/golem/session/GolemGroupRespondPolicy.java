@@ -46,21 +46,28 @@ public interface GolemGroupRespondPolicy {
 
     /**
      * 当前消息是否应按群策略放行（私聊请勿调用）。
+     * {@code conversationBusy} 为 true 时智能/随机不走概率，全量只接点名或跟聊窗。
      */
     default boolean allows(MsgInfo msg, boolean mentioned, boolean mentionWindowActive) {
+        return allows(msg, mentioned, mentionWindowActive, false);
+    }
+
+    default boolean allows(MsgInfo msg, boolean mentioned, boolean mentionWindowActive,
+                           boolean conversationBusy) {
         if (msg == null || msg.isPrivateChat()) {
             return true;
         }
         GolemGroupSettings settings = get(msg.accountId(), msg.groupId());
+        boolean chance = !conversationBusy && hitsChance(settings);
         return switch (settings.mode()) {
-            case FULL -> true;
+            case FULL -> !conversationBusy || mentioned || mentionWindowActive;
             case MENTION -> mentioned || mentionWindowActive;
             case RULE -> mentioned || mentionWindowActive || matchesRule(settings, msg);
-            case RANDOM -> mentioned || mentionWindowActive || hitsChance(settings);
-            // 智能 = 点名 ∪ 规则 ∪ 随机（配置共用：跟聊秒数 / 概率 / 用户 / 关键词）
+            case RANDOM -> mentioned || mentionWindowActive || chance;
+            // 智能 = 点名 ∪ 规则 ∪ 随机；会话占用时关掉随机
             case SMART -> mentioned || mentionWindowActive
                     || matchesRule(settings, msg)
-                    || hitsChance(settings);
+                    || chance;
         };
     }
 

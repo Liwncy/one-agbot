@@ -13,6 +13,8 @@ import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
+import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
+import me.liwncy.agbot.kernel.api.session.SessionKeys;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +53,7 @@ public class GolemWebhookController {
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
     private final ChatLogService chatLog;
+    private final ConversationTurnGuard turnGuard;
 
     public GolemWebhookController(AdapterRuntime runtime,
                                   GolemProperties properties,
@@ -62,7 +65,8 @@ public class GolemWebhookController {
                                   GolemGroupModeCommandHandler groupModeCommandHandler,
                                   GolemOwnerCommandHandler ownerCommandHandler,
                                   GolemMediaResolver mediaResolver,
-                                  ObjectProvider<ChatLogService> chatLog) {
+                                  ObjectProvider<ChatLogService> chatLog,
+                                  ConversationTurnGuard turnGuard) {
         this.runtime = runtime;
         this.properties = properties;
         this.groupGate = groupGate;
@@ -74,6 +78,7 @@ public class GolemWebhookController {
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
         this.chatLog = chatLog.getIfAvailable();
+        this.turnGuard = turnGuard;
     }
 
     @PostMapping("/{accountId}/webhook")
@@ -151,9 +156,10 @@ public class GolemWebhookController {
                     : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
             boolean activated = !msg.isPrivateChat()
                     && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId(), followUp);
-            if (!msg.isPrivateChat() && !respondPolicy.allows(msg, mentioned, activated)) {
+            boolean conversationBusy = !msg.isPrivateChat() && turnGuard.isBusy(SessionKeys.of(msg));
+            if (!msg.isPrivateChat() && !respondPolicy.allows(msg, mentioned, activated, conversationBusy)) {
                 skippedNoMention++;
-                log.info("Skip by group mode accountId={} groupId={} userId={} mode={} followUp={}s mentioned={} activated={} msg={}",
+                log.info("Skip by group mode accountId={} groupId={} userId={} mode={} followUp={}s mentioned={} activated={} busy={} msg={}",
                         msg.accountId(),
                         msg.groupId(),
                         msg.userId(),
@@ -161,6 +167,7 @@ public class GolemWebhookController {
                         followUp.toSeconds(),
                         mentioned,
                         activated,
+                        conversationBusy,
                         preview(msg.msg()));
                 continue;
             }
