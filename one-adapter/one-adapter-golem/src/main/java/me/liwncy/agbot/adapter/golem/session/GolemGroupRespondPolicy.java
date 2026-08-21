@@ -46,7 +46,6 @@ public interface GolemGroupRespondPolicy {
 
     /**
      * 当前消息是否应按群策略放行（私聊请勿调用）。
-     * <p>调用方须先拦截「跟别人说话」。</p>
      */
     default boolean allows(MsgInfo msg, boolean mentioned, boolean mentionWindowActive) {
         if (msg == null || msg.isPrivateChat()) {

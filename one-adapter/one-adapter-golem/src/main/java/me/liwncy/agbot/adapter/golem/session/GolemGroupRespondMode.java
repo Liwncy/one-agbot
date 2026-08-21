@@ -11,11 +11,11 @@ import java.util.Locale;
 public enum GolemGroupRespondMode {
     /** 要 @ / 点名（或短窗口跟聊）才回 */
     MENTION,
-    /** 会话开启后群内全量响应（「跟别人说话」仍不接） */
+    /** 会话开启后群内全量响应 */
     FULL,
-    /** 限定规则：白名单用户 / 关键词（@ 仍可触发） */
+    /** 限定规则：白名单用户 / 关键词（点名仍可触发） */
     RULE,
-    /** 按概率随机插话（「跟别人说话」仍不接） */
+    /** 按概率随机插话 */
     RANDOM,
     /** 智能：点名 ∪ 规则 ∪ 随机（共用跟聊/概率/白名单/关键词配置） */
     SMART;
@@ -32,11 +32,11 @@ public enum GolemGroupRespondMode {
 
     public String tip() {
         return switch (this) {
-            case MENTION -> "要 @ 我或引用我才回（跟聊窗口内可免 @）";
-            case FULL -> "群里说话我都接（跟别人说话时除外）";
-            case RULE -> "只听白名单或关键词（@ 我也能触发）";
-            case RANDOM -> "按概率偶尔接一句（跟别人说话时除外）";
-            case SMART -> "@/跟聊、规则命中或按概率都会接（跟别人说话时除外）";
+            case MENTION -> "点到我或引用我才回（跟聊窗口内可免）";
+            case FULL -> "群里说话我都接";
+            case RULE -> "只听白名单或关键词（点到我也能触发）";
+            case RANDOM -> "按概率偶尔接一句";
+            case SMART -> "点名/跟聊、规则命中或按概率都会接";
         };
     }
 

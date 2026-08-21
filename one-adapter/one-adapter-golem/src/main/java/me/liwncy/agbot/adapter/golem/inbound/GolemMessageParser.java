@@ -145,13 +145,7 @@ public final class GolemMessageParser {
                     properties.getBotWechatId(),
                     properties.getBotWechatName());
         }
-        if ("group".equals(source) && botMentioned && MsgType.TEXT.equals(msgType)) {
-            content = GolemMentionDetector.stripMentionPrefix(
-                    content, properties.getBotWechatId(), properties.getBotWechatName());
-            if (content.isBlank()) {
-                content = "你好";
-            }
-        }
+        // 点名只决定进不进 Agent，正文里的 @机器人 原样保留
 
         if (content == null || content.isBlank()) {
             content = defaultLabel(msgType);

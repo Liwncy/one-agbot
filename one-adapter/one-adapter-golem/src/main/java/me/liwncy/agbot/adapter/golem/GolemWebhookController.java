@@ -3,7 +3,6 @@ package me.liwncy.agbot.adapter.golem;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
-import me.liwncy.agbot.adapter.golem.inbound.GolemMentionDetector;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupModeCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondMode;
@@ -12,7 +11,6 @@ import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
-import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
@@ -148,23 +146,6 @@ public class GolemWebhookController {
             }
 
             boolean mentioned = isBotMentioned(msg);
-            String pushContent = stringExtra(msg, "pushContent");
-            // 跟别人说话（atuserlist / 正文 @别人）时不接——全量、随机、跟聊窗一律让路
-            if (!msg.isPrivateChat()
-                    && GolemMentionDetector.isTalkingToOthersOnly(
-                    mentionIds(msg),
-                    msg.msg(),
-                    pushContent,
-                    properties.getBotWechatId(),
-                    properties.getBotWechatName(),
-                    stringExtra(msg, ChannelExtraKeys.QUOTE_FROM),
-                    stringExtra(msg, ChannelExtraKeys.QUOTE_FROM_NAME))) {
-                skippedNoMention++;
-                log.info("Skip talking-to-others accountId={} groupId={} userId={} mentionIds={} msg={}",
-                        msg.accountId(), msg.groupId(), msg.userId(),
-                        mentionIds(msg), preview(msg.msg()));
-                continue;
-            }
             Duration followUp = msg.isPrivateChat()
                     ? Duration.ZERO
                     : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
@@ -243,35 +224,6 @@ public class GolemWebhookController {
     private static boolean isBotMentioned(MsgInfo msg) {
         Object flag = msg.extra().get("botMentioned");
         return Boolean.TRUE.equals(flag);
-    }
-
-    private static String stringExtra(MsgInfo msg, String key) {
-        if (msg == null || msg.extra() == null || key == null) {
-            return "";
-        }
-        Object v = msg.extra().get(key);
-        return v == null ? "" : String.valueOf(v);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<String> mentionIds(MsgInfo msg) {
-        if (msg == null || msg.extra() == null) {
-            return List.of();
-        }
-        Object raw = msg.extra().get(ChannelExtraKeys.MENTION_IDS);
-        if (raw instanceof List<?> list) {
-            List<String> out = new java.util.ArrayList<>();
-            for (Object item : list) {
-                if (item != null && !String.valueOf(item).isBlank()) {
-                    out.add(String.valueOf(item).trim());
-                }
-            }
-            return out;
-        }
-        if (raw != null && !String.valueOf(raw).isBlank()) {
-            return List.of(String.valueOf(raw).trim().split("[,\\s]+"));
-        }
-        return List.of();
     }
 
     private static boolean isBlank(String value) {
