@@ -43,6 +43,10 @@ agbot:
     stream-reply: true
     stream-min-chars: 16
     stream-timeout-ms: 300000
+    # 群聊接话时附带近期通道记录：时间窗 + 条数；窗内有出站则只带增量
+    context-enabled: true
+    context-window-minutes: 30
+    context-max-rows: 20
   adapter:
     golem:
       # 取值对齐 xchatbot wrangler.toml（WECHAT_* / BOT_*）

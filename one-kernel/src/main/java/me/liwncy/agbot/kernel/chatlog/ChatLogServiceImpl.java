@@ -43,7 +43,7 @@ public class ChatLogServiceImpl implements ChatLogService {
         row.setAdapter(adapterId);
         row.setAccountId(blankTo(msgInfo.accountId(), "default"));
         row.setMessageId(blankTo(msgInfo.msgId(), "in-" + System.nanoTime()));
-        fillSession(row, msgInfo.userId(), msgInfo.groupId());
+        applySession(row, msgInfo.userId(), msgInfo.groupId());
         row.setDirection(DIRECTION_INBOUND);
         row.setSenderId(blankTo(msgInfo.userId(), "unknown"));
         row.setSenderName(nullToEmpty(msgInfo.userName()));
@@ -68,7 +68,7 @@ public class ChatLogServiceImpl implements ChatLogService {
         row.setAccountId(blankTo(replyInfo.accountId(), "default"));
         String causedBy = emptyToNull(replyInfo.toMsgId());
         row.setMessageId(blankTo(outboundMsgId, "out-" + blankTo(causedBy, "na") + "-" + System.nanoTime()));
-        fillSession(row, replyInfo.userId(), replyInfo.groupId());
+        applySession(row, replyInfo.userId(), replyInfo.groupId());
         row.setDirection(DIRECTION_OUTBOUND);
         row.setSenderId(blankTo(replyInfo.accountId(), "bot"));
         row.setSenderName("bot");
@@ -126,6 +126,54 @@ public class ChatLogServiceImpl implements ChatLogService {
         return rows == null ? List.of() : rows;
     }
 
+    @Override
+    public List<ChatMessage> listReplyContext(MsgInfo current, int maxMinutes, int maxRows) {
+        if (current == null || current.isPrivateChat()) {
+            return List.of();
+        }
+        int minutes = maxMinutes < 1 ? 30 : Math.min(maxMinutes, 180);
+        int limit = maxRows < 1 ? 20 : Math.min(maxRows, 40);
+        String accountId = blankTo(current.accountId(), "default");
+        String sessionId = ChatLogSessions.of(current);
+        String platform = ChatLogChannels.channelPlatform(current.platform());
+        LocalDateTime since = LocalDateTime.now().minusMinutes(minutes);
+        Long afterId = findLastOutboundId(accountId, sessionId, platform, since);
+
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, accountId);
+        wrapper.eq(ChatMessage::getSessionId, sessionId);
+        wrapper.eq(ChatMessage::getPlatform, platform);
+        wrapper.ge(ChatMessage::getMsgTime, since);
+        if (afterId != null) {
+            wrapper.gt(ChatMessage::getId, afterId);
+        }
+        if (current.msgId() != null && !current.msgId().isBlank()) {
+            wrapper.ne(ChatMessage::getMessageId, current.msgId().trim());
+        }
+        wrapper.orderByDesc(ChatMessage::getId);
+        wrapper.last("LIMIT " + limit);
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<ChatMessage> chronological = new ArrayList<>(rows);
+        Collections.reverse(chronological);
+        return chronological;
+    }
+
+    private Long findLastOutboundId(String accountId, String sessionId, String platform, LocalDateTime since) {
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, accountId);
+        wrapper.eq(ChatMessage::getSessionId, sessionId);
+        wrapper.eq(ChatMessage::getPlatform, platform);
+        wrapper.eq(ChatMessage::getDirection, DIRECTION_OUTBOUND);
+        wrapper.ge(ChatMessage::getMsgTime, since);
+        wrapper.orderByDesc(ChatMessage::getId);
+        wrapper.last("LIMIT 1");
+        ChatMessage last = mapper.selectOne(wrapper);
+        return last == null ? null : last.getId();
+    }
+
     private void insertQuietly(ChatMessage row) {
         try {
             mapper.insert(row);
@@ -138,15 +186,10 @@ public class ChatLogServiceImpl implements ChatLogService {
         }
     }
 
-    private static void fillSession(ChatMessage row, String userId, String groupId) {
+    private static void applySession(ChatMessage row, String userId, String groupId) {
         boolean group = groupId != null && !groupId.isBlank() && !"0".equals(groupId);
-        if (group) {
-            row.setSessionType(SESSION_GROUP);
-            row.setSessionId("group:" + groupId);
-        } else {
-            row.setSessionType(SESSION_PRIVATE);
-            row.setSessionId("user:" + blankTo(userId, "unknown"));
-        }
+        row.setSessionType(group ? SESSION_GROUP : SESSION_PRIVATE);
+        row.setSessionId(ChatLogSessions.of(userId, groupId));
     }
 
     private static LocalDateTime toMsgTime(Long epochMs) {

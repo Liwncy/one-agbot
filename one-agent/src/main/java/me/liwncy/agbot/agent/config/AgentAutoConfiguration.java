@@ -9,6 +9,7 @@ import me.liwncy.agbot.agent.SnailAiOpenApiClient;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -39,7 +40,9 @@ public class AgentAutoConfiguration {
     public AgentBridge agentBridge(SnailAiOpenApiClient client,
                                    ConversationMapper conversationMapper,
                                    AgbotAgentProperties properties,
-                                   ObjectProvider<AdapterRuntime> runtimeProvider) {
-        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider);
+                                   ObjectProvider<AdapterRuntime> runtimeProvider,
+                                   ObjectProvider<ChatLogService> chatLog) {
+        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider,
+                chatLog.getIfAvailable());
     }
 }

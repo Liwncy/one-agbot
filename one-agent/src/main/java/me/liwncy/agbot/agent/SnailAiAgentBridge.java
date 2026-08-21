@@ -9,6 +9,9 @@ import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
 import me.liwncy.agbot.kernel.api.session.SessionKeys;
+import me.liwncy.agbot.kernel.chatlog.ChatLogLines;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
+import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,15 +32,25 @@ public class SnailAiAgentBridge implements AgentBridge {
     private final ConversationMapper conversationMapper;
     private final AgbotAgentProperties properties;
     private final ObjectProvider<AdapterRuntime> runtimeProvider;
+    private final ChatLogService chatLog;
 
     public SnailAiAgentBridge(SnailAiOpenApiClient client,
                               ConversationMapper conversationMapper,
                               AgbotAgentProperties properties,
                               ObjectProvider<AdapterRuntime> runtimeProvider) {
+        this(client, conversationMapper, properties, runtimeProvider, null);
+    }
+
+    public SnailAiAgentBridge(SnailAiOpenApiClient client,
+                              ConversationMapper conversationMapper,
+                              AgbotAgentProperties properties,
+                              ObjectProvider<AdapterRuntime> runtimeProvider,
+                              ChatLogService chatLog) {
         this.client = client;
         this.conversationMapper = conversationMapper;
         this.properties = properties;
         this.runtimeProvider = runtimeProvider;
+        this.chatLog = chatLog;
     }
 
     @Override
@@ -108,6 +121,7 @@ public class SnailAiAgentBridge implements AgentBridge {
             log.warn("Agent chat without attachment after media present type={} media={}",
                     input.msgType(), mediaSummary(input));
         }
+        content = withRecentContext(msgInfo, content);
         log.info("Agent chat openId={} conversationId={} userId={} userName={} groupId={} msgType={} attachments={} stream={} media={} content={}",
                 openId, conversationId, msgInfo.userId(), msgInfo.userName(), msgInfo.groupId(),
                 input.msgType(), imageIds.size(), properties.isStreamReply(), mediaSummary(input), preview(content));
@@ -116,6 +130,29 @@ public class SnailAiAgentBridge implements AgentBridge {
             return handleStream(msgInfo, openId, conversationId, content, imageIds);
         }
         return handleSync(msgInfo, openId, conversationId, content, imageIds);
+    }
+
+    private String withRecentContext(MsgInfo msgInfo, String content) {
+        if (!properties.isContextEnabled() || chatLog == null || msgInfo == null || msgInfo.isPrivateChat()) {
+            return content;
+        }
+        try {
+            List<ChatMessage> rows = chatLog.listReplyContext(
+                    msgInfo, properties.getContextWindowMinutes(), properties.getContextMaxRows());
+            if (rows.isEmpty()) {
+                return content;
+            }
+            String block = ChatLogLines.contextBlock(rows);
+            if (block.isBlank()) {
+                return content;
+            }
+            log.info("Agent context prepend rows={} window={}m session={}",
+                    rows.size(), properties.getContextWindowMinutes(), msgInfo.groupId());
+            return "[近期]\n" + block + "\n[本条]\n" + content;
+        } catch (Exception e) {
+            log.warn("Agent context skipped groupId={}: {}", msgInfo.groupId(), e.getMessage());
+            return content;
+        }
     }
 
     private AgentOutcome handleSync(MsgInfo msgInfo, String openId, String conversationId,
