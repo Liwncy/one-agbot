@@ -119,7 +119,7 @@ agbot:
 
 - `snail-ai.enabled=true`：注册 Agent Client（gRPC 执行器）；否则 Server 会报「没有可用的客户端实例」
 - `snail-ai.open-api.*`：官方 OpenAPI Client（与 RuoYi `ruoyi-admin` 同前缀）
-- `agbot.agent.*`：网关侧默认 agentId、是否异步；群聊接话上下文 `context-window-minutes` / `context-max-rows`
+- `agbot.agent.*`：网关侧默认 agentId、是否异步
 - `agbot.adapter.golem.*`：Golem 网关地址、Webhook 验签、会话激活（`session-require-activation`）等
 - `agbot.kernel.max-message-age`：过旧消息丢弃
 - 默认排除 DataSource/MyBatis；Redis 默认开启（Boot 4：`DataRedisAutoConfiguration`）。需密码时设 `REDIS_PASSWORD`；连不上则会话激活/群开关改用本地文件
