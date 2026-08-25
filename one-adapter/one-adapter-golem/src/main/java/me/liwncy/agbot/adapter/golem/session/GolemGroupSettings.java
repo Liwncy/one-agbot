@@ -84,7 +84,7 @@ public record GolemGroupSettings(
         if (mode == GolemGroupRespondMode.RANDOM || mode == GolemGroupRespondMode.SMART) {
             sb.append("；").append(chanceLabel());
         }
-        if (mode == GolemGroupRespondMode.RULE || mode == GolemGroupRespondMode.SMART) {
+        if (mode == GolemGroupRespondMode.RULE) {
             sb.append("；").append(rule().summary());
         }
         return sb.toString();

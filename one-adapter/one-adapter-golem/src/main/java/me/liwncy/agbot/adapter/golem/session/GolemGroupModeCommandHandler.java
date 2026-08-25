@@ -139,8 +139,7 @@ public class GolemGroupModeCommandHandler {
 
     private void ensureRuleMode(MsgInfo msg) {
         GolemGroupRespondMode mode = respondPolicy.getMode(msg.accountId(), msg.groupId());
-        // 智能模式保留，只改规则配置；其它非规则模式才自动切到规则
-        if (mode != GolemGroupRespondMode.RULE && mode != GolemGroupRespondMode.SMART) {
+        if (mode != GolemGroupRespondMode.RULE) {
             respondPolicy.setMode(msg.accountId(), msg.groupId(), GolemGroupRespondMode.RULE);
         }
     }

@@ -15,9 +15,9 @@ public enum GolemGroupRespondMode {
     FULL,
     /** 限定规则：白名单用户 / 关键词（点名仍可触发） */
     RULE,
-    /** 按概率随机插话 */
+    /** 按概率随机插话（不看点名、不开跟聊） */
     RANDOM,
-    /** 智能：点名 ∪ 规则 ∪ 随机（共用跟聊/概率/白名单/关键词配置） */
+    /** 智能：点名（含跟聊）∪ 随机 */
     SMART;
 
     public String label() {
@@ -35,8 +35,8 @@ public enum GolemGroupRespondMode {
             case MENTION -> "点到我或引用我才回（跟聊窗口内可免）";
             case FULL -> "群里说话我都接；会话忙时只接点名";
             case RULE -> "只听白名单或关键词（点到我也能触发）";
-            case RANDOM -> "按概率偶尔接一句；会话忙时不随机";
-            case SMART -> "点名/跟聊、规则命中或按概率都会接；会话忙时不随机";
+            case RANDOM -> "群里任何消息按概率接；不看点名；会话忙时不接";
+            case SMART -> "点名/跟聊或按概率都会接；会话忙时不随机";
         };
     }
 

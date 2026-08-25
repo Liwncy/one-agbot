@@ -151,10 +151,18 @@ public class GolemWebhookController {
             }
 
             boolean mentioned = isBotMentioned(msg);
-            Duration followUp = msg.isPrivateChat()
+            GolemGroupRespondMode mode = msg.isPrivateChat()
+                    ? null
+                    : respondPolicy.getMode(msg.accountId(), msg.groupId());
+            boolean followUpApplies = mode == GolemGroupRespondMode.MENTION
+                    || mode == GolemGroupRespondMode.SMART
+                    || mode == GolemGroupRespondMode.RULE
+                    || mode == GolemGroupRespondMode.FULL;
+            Duration followUp = !followUpApplies
                     ? Duration.ZERO
                     : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
             boolean activated = !msg.isPrivateChat()
+                    && followUpApplies
                     && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId(), followUp);
             boolean conversationBusy = !msg.isPrivateChat() && turnGuard.isBusy(SessionKeys.of(msg));
             if (!msg.isPrivateChat() && !respondPolicy.allows(msg, mentioned, activated, conversationBusy)) {
@@ -163,7 +171,7 @@ public class GolemWebhookController {
                         msg.accountId(),
                         msg.groupId(),
                         msg.userId(),
-                        respondPolicy.getMode(msg.accountId(), msg.groupId()),
+                        mode,
                         followUp.toSeconds(),
                         mentioned,
                         activated,
@@ -171,13 +179,8 @@ public class GolemWebhookController {
                         preview(msg.msg()));
                 continue;
             }
-            // 点名/跟聊续窗；随机或智能放行后也可续（若开了跟聊）
-            GolemGroupRespondMode mode = msg.isPrivateChat()
-                    ? null
-                    : respondPolicy.getMode(msg.accountId(), msg.groupId());
-            if (!msg.isPrivateChat() && (mentioned || activated
-                    || mode == GolemGroupRespondMode.RANDOM
-                    || mode == GolemGroupRespondMode.SMART)) {
+            // 跟聊只挂在点名（智能/规则/全量忙时也靠点名窗）；随机命中不续窗
+            if (followUpApplies && (mentioned || activated)) {
                 mentionActivation.touch(msg.accountId(), msg.groupId(), msg.userId(), followUp);
             }
             accepted++;

@@ -46,7 +46,8 @@ public interface GolemGroupRespondPolicy {
 
     /**
      * 当前消息是否应按群策略放行（私聊请勿调用）。
-     * {@code conversationBusy} 为 true 时智能/随机不走概率，全量只接点名或跟聊窗。
+     * 随机只看概率；点名含 @/昵称/引用及跟聊窗；智能 = 点名 ∪ 随机。
+     * 会话忙时关掉概率，全量只留点名或跟聊窗。
      */
     default boolean allows(MsgInfo msg, boolean mentioned, boolean mentionWindowActive) {
         return allows(msg, mentioned, mentionWindowActive, false);
@@ -59,15 +60,13 @@ public interface GolemGroupRespondPolicy {
         }
         GolemGroupSettings settings = get(msg.accountId(), msg.groupId());
         boolean chance = !conversationBusy && hitsChance(settings);
+        boolean named = mentioned || mentionWindowActive;
         return switch (settings.mode()) {
-            case FULL -> !conversationBusy || mentioned || mentionWindowActive;
-            case MENTION -> mentioned || mentionWindowActive;
-            case RULE -> mentioned || mentionWindowActive || matchesRule(settings, msg);
-            case RANDOM -> mentioned || mentionWindowActive || chance;
-            // 智能 = 点名 ∪ 规则 ∪ 随机；会话占用时关掉随机
-            case SMART -> mentioned || mentionWindowActive
-                    || matchesRule(settings, msg)
-                    || chance;
+            case FULL -> !conversationBusy || named;
+            case MENTION -> named;
+            case RULE -> named || matchesRule(settings, msg);
+            case RANDOM -> chance;
+            case SMART -> named || chance;
         };
     }
 
