@@ -141,6 +141,33 @@ public class ChatLogServiceImpl implements ChatLogService {
     }
 
     @Override
+    public List<ChatMessage> listRecentContext(String accountId, String sessionId,
+                                               LocalDateTime since, String excludeMessageId, int limit) {
+        if (sessionId == null || sessionId.isBlank() || since == null || limit < 1) {
+            return List.of();
+        }
+        int size = Math.min(limit, 50);
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, blankTo(accountId, "default"));
+        wrapper.eq(ChatMessage::getSessionId, sessionId.trim());
+        wrapper.eq(ChatMessage::getDirection, DIRECTION_INBOUND);
+        wrapper.ge(ChatMessage::getMsgTime, since);
+        String exclude = emptyToNull(excludeMessageId);
+        if (exclude != null) {
+            wrapper.ne(ChatMessage::getMessageId, exclude);
+        }
+        wrapper.orderByDesc(ChatMessage::getId);
+        wrapper.last("LIMIT " + size);
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<ChatMessage> chronological = new ArrayList<>(rows);
+        Collections.reverse(chronological);
+        return chronological;
+    }
+
+    @Override
     public List<ChatMessage> listByMessageId(String accountId, String messageId) {
         if (messageId == null || messageId.isBlank()) {
             return List.of();

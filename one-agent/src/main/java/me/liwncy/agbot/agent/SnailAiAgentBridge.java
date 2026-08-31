@@ -12,10 +12,14 @@ import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
 import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
 import me.liwncy.agbot.kernel.api.session.SessionKeys;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
+import me.liwncy.agbot.kernel.chatlog.ChatLogSessions;
+import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -34,19 +38,22 @@ public class SnailAiAgentBridge implements AgentBridge {
     private final ObjectProvider<AdapterRuntime> runtimeProvider;
     private final ConversationTurnGuard turnGuard;
     private final RoleplayService roleplay;
+    private final ObjectProvider<ChatLogService> chatLogProvider;
 
     public SnailAiAgentBridge(SnailAiOpenApiClient client,
                               ConversationMapper conversationMapper,
                               AgbotAgentProperties properties,
                               ObjectProvider<AdapterRuntime> runtimeProvider,
                               ConversationTurnGuard turnGuard,
-                              RoleplayService roleplay) {
+                              RoleplayService roleplay,
+                              ObjectProvider<ChatLogService> chatLogProvider) {
         this.client = client;
         this.conversationMapper = conversationMapper;
         this.properties = properties;
         this.runtimeProvider = runtimeProvider;
         this.turnGuard = turnGuard;
         this.roleplay = roleplay;
+        this.chatLogProvider = chatLogProvider;
     }
 
     @Override
@@ -131,6 +138,7 @@ public class SnailAiAgentBridge implements AgentBridge {
                 input.content(),
                 AgentMessageFormatter.withSpeaker(msgInfo,
                         imageIds.isEmpty() ? "（附件没带上，按文字聊）" : "请看这张图片"));
+        content = prependRecentContext(msgInfo, content);
         RoleplayCharacter character = roleplay.current(msgInfo);
         if (character != null) {
             content = roleplay.wrapUserContent(content, character);
@@ -370,6 +378,35 @@ public class SnailAiAgentBridge implements AgentBridge {
             if (fatalOnError) {
                 throw e instanceof RuntimeException re ? re : new IllegalStateException(e);
             }
+        }
+    }
+
+    private String prependRecentContext(MsgInfo msgInfo, String content) {
+        int minutes = properties.getContextWindowMinutes();
+        int max = properties.getContextMaxMessages();
+        if (minutes <= 0 || max <= 0 || chatLogProvider == null) {
+            return content;
+        }
+        ChatLogService chatLog = chatLogProvider.getIfAvailable();
+        if (chatLog == null) {
+            return content;
+        }
+        try {
+            String sessionId = ChatLogSessions.of(msgInfo.userId(), msgInfo.groupId());
+            List<ChatMessage> rows = chatLog.listRecentContext(
+                    msgInfo.accountId(),
+                    sessionId,
+                    LocalDateTime.now().minusMinutes(minutes),
+                    msgInfo.msgId(),
+                    max);
+            if (rows.isEmpty()) {
+                return content;
+            }
+            log.info("Agent context attached session={} window={}m hits={}", sessionId, minutes, rows.size());
+            return AgentRecentContext.prepend(content, rows, minutes);
+        } catch (Exception e) {
+            log.warn("Agent context load failed: {}", e.getMessage());
+            return content;
         }
     }
 

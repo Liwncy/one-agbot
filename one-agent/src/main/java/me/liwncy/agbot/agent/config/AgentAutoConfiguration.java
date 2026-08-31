@@ -18,6 +18,8 @@ import me.liwncy.agbot.kernel.api.agent.RoleplayCommands;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
 import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
+import me.liwncy.agbot.kernel.chatlog.ChatLogAutoConfiguration;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.kernel.support.KernelAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +41,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 @AutoConfiguration(after = {
         SnailAiOpenApiAutoConfiguration.class,
         KernelAutoConfiguration.class,
-        MybatisPlusConfig.class
+        MybatisPlusConfig.class,
+        ChatLogAutoConfiguration.class
 })
 @EnableConfigurationProperties(AgbotAgentProperties.class)
 @ConditionalOnProperty(prefix = "agbot.agent", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -87,8 +90,9 @@ public class AgentAutoConfiguration {
                                    AgbotAgentProperties properties,
                                    ObjectProvider<AdapterRuntime> runtimeProvider,
                                    ConversationTurnGuard turnGuard,
-                                   RoleplayService roleplay) {
-        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider, turnGuard, roleplay);
+                                   RoleplayService roleplay,
+                                   ObjectProvider<ChatLogService> chatLog) {
+        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider, turnGuard, roleplay, chatLog);
     }
 
     private static boolean pingRedis(StringRedisTemplate template) {

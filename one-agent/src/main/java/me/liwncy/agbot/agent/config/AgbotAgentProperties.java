@@ -17,6 +17,10 @@ public class AgbotAgentProperties {
     private int streamMinChars = 16;
     /** 流式对话阻塞上限（毫秒），宜 ≥ snail-ai.open-api.chat-timeout-ms。 */
     private long streamTimeoutMs = 300_000L;
+    /** 触发时附带同会话最近 inbound 的分钟数；≤0 关闭。 */
+    private int contextWindowMinutes = 5;
+    /** 时间窗内最多附带几条（不含本条）；≤0 关闭。 */
+    private int contextMaxMessages = 10;
 
     public boolean isEnabled() {
         return enabled;
@@ -64,5 +68,21 @@ public class AgbotAgentProperties {
 
     public void setStreamTimeoutMs(long streamTimeoutMs) {
         this.streamTimeoutMs = streamTimeoutMs;
+    }
+
+    public int getContextWindowMinutes() {
+        return contextWindowMinutes;
+    }
+
+    public void setContextWindowMinutes(int contextWindowMinutes) {
+        this.contextWindowMinutes = contextWindowMinutes;
+    }
+
+    public int getContextMaxMessages() {
+        return contextMaxMessages;
+    }
+
+    public void setContextMaxMessages(int contextMaxMessages) {
+        this.contextMaxMessages = contextMaxMessages;
     }
 }
