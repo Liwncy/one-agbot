@@ -35,4 +35,12 @@ public class RedisConversationMapper implements ConversationMapper {
         }
         return created;
     }
+
+    @Override
+    public void reset(String sessionKey) {
+        if (sessionKey == null || sessionKey.isBlank()) {
+            return;
+        }
+        redis.delete(RedisKey.of("conv", sessionKey));
+    }
 }

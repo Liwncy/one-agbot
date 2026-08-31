@@ -1,6 +1,8 @@
 package me.liwncy.agbot.agent;
 
 import me.liwncy.agbot.agent.config.AgbotAgentProperties;
+import me.liwncy.agbot.agent.roleplay.RoleplayCharacter;
+import me.liwncy.agbot.agent.roleplay.RoleplayService;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.agent.AgentOutcome;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
@@ -31,17 +33,20 @@ public class SnailAiAgentBridge implements AgentBridge {
     private final AgbotAgentProperties properties;
     private final ObjectProvider<AdapterRuntime> runtimeProvider;
     private final ConversationTurnGuard turnGuard;
+    private final RoleplayService roleplay;
 
     public SnailAiAgentBridge(SnailAiOpenApiClient client,
                               ConversationMapper conversationMapper,
                               AgbotAgentProperties properties,
                               ObjectProvider<AdapterRuntime> runtimeProvider,
-                              ConversationTurnGuard turnGuard) {
+                              ConversationTurnGuard turnGuard,
+                              RoleplayService roleplay) {
         this.client = client;
         this.conversationMapper = conversationMapper;
         this.properties = properties;
         this.runtimeProvider = runtimeProvider;
         this.turnGuard = turnGuard;
+        this.roleplay = roleplay;
     }
 
     @Override
@@ -80,6 +85,13 @@ public class SnailAiAgentBridge implements AgentBridge {
     }
 
     private AgentOutcome doHandle(MsgInfo msgInfo) {
+        String commandReply = roleplay.tryHandleCommand(msgInfo);
+        if (commandReply != null && !commandReply.isBlank()) {
+            log.info("Roleplay command handled userId={} groupId={} reply={}",
+                    msgInfo.userId(), msgInfo.groupId(), preview(commandReply));
+            return new AgentOutcome.Reply(ReplyInfo.text(commandReply, msgInfo));
+        }
+
         String externalId = SessionKeys.externalUserId(msgInfo);
         String openId;
         try {
@@ -119,6 +131,10 @@ public class SnailAiAgentBridge implements AgentBridge {
                 input.content(),
                 AgentMessageFormatter.withSpeaker(msgInfo,
                         imageIds.isEmpty() ? "（附件没带上，按文字聊）" : "请看这张图片"));
+        RoleplayCharacter character = roleplay.current(msgInfo);
+        if (character != null) {
+            content = roleplay.wrapUserContent(content, character);
+        }
         if (imageIds.isEmpty() && input.hasMedia()) {
             log.warn("Agent chat without attachment after media present type={} media={}",
                     input.msgType(), mediaSummary(input));

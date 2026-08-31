@@ -16,4 +16,12 @@ public class InMemoryConversationMapper implements ConversationMapper {
     public String resolveConversationId(String sessionKey) {
         return store.computeIfAbsent(sessionKey, k -> UUID.randomUUID().toString().replace("-", ""));
     }
+
+    @Override
+    public void reset(String sessionKey) {
+        if (sessionKey == null || sessionKey.isBlank()) {
+            return;
+        }
+        store.remove(sessionKey);
+    }
 }

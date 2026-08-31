@@ -15,6 +15,15 @@
             <groupId>me.liwncy</groupId>
             <artifactId>one-kernel</artifactId>
         </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
+            <artifactId>one-common-mybatis</artifactId>
+        </dependency>
         <!-- 对齐 ruoyi-common-ai -->
         <dependency>
             <groupId>com.aizuda</groupId>
