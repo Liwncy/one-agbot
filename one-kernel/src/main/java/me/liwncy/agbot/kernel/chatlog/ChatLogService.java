@@ -5,7 +5,9 @@ import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 通道聊天记录。写入失败不得打断收发。
@@ -27,6 +29,11 @@ public interface ChatLogService {
      */
     List<ChatMessage> listRecentContext(String accountId, String sessionId,
                                         LocalDateTime since, String excludeMessageId, int limit);
+
+    /**
+     * 这些 inbound 里已经有出站回过的 {@code messageId}（{@code caused_by}）。
+     */
+    Set<String> listRepliedMessageIds(String accountId, String sessionId, Collection<String> inboundMessageIds);
 
     /**
      * 按通道消息 id 查找（同一 account 下可能跨 platform 多条）。

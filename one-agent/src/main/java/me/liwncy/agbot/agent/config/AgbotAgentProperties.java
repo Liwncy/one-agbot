@@ -21,6 +21,8 @@ public class AgbotAgentProperties {
     private int contextWindowMinutes = 5;
     /** 时间窗内最多附带几条（不含本条）；≤0 关闭。 */
     private int contextMaxMessages = 10;
+    /** 历史里最多再上传几张未进过模型的图；≤0 不传历史图。 */
+    private int contextMaxImages = 3;
 
     public boolean isEnabled() {
         return enabled;
@@ -84,5 +86,13 @@ public class AgbotAgentProperties {
 
     public void setContextMaxMessages(int contextMaxMessages) {
         this.contextMaxMessages = contextMaxMessages;
+    }
+
+    public int getContextMaxImages() {
+        return contextMaxImages;
+    }
+
+    public void setContextMaxImages(int contextMaxImages) {
+        this.contextMaxImages = contextMaxImages;
     }
 }

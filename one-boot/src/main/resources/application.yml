@@ -47,6 +47,7 @@ agbot:
     # 触发时附带同会话最近 inbound（按 msg_time；≤0 关闭）
     context-window-minutes: 10
     context-max-messages: 15
+    context-max-images: 3
   adapter:
     golem:
       # 取值对齐 xchatbot wrangler.toml（WECHAT_* / BOT_*）

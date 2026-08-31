@@ -5,6 +5,7 @@ import me.liwncy.agbot.agent.roleplay.RoleplayCharacter;
 import me.liwncy.agbot.agent.roleplay.RoleplayService;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.agent.AgentOutcome;
+import me.liwncy.agbot.kernel.api.message.MediaRef;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
@@ -21,7 +22,10 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -138,7 +142,7 @@ public class SnailAiAgentBridge implements AgentBridge {
                 input.content(),
                 AgentMessageFormatter.withSpeaker(msgInfo,
                         imageIds.isEmpty() ? "（附件没带上，按文字聊）" : "请看这张图片"));
-        content = prependRecentContext(msgInfo, content);
+        content = attachRecentContext(msgInfo, content, openId, imageIds);
         RoleplayCharacter character = roleplay.current(msgInfo);
         if (character != null) {
             content = roleplay.wrapUserContent(content, character);
@@ -381,7 +385,7 @@ public class SnailAiAgentBridge implements AgentBridge {
         }
     }
 
-    private String prependRecentContext(MsgInfo msgInfo, String content) {
+    private String attachRecentContext(MsgInfo msgInfo, String content, String openId, List<Long> imageIds) {
         int minutes = properties.getContextWindowMinutes();
         int max = properties.getContextMaxMessages();
         if (minutes <= 0 || max <= 0 || chatLogProvider == null) {
@@ -402,12 +406,63 @@ public class SnailAiAgentBridge implements AgentBridge {
             if (rows.isEmpty()) {
                 return content;
             }
-            log.info("Agent context attached session={} window={}m hits={}", sessionId, minutes, rows.size());
-            return AgentRecentContext.prepend(content, rows, minutes);
+            Map<String, Integer> attached = uploadUnseenHistoryImages(chatLog, msgInfo, sessionId, openId, rows, imageIds);
+            log.info("Agent context attached session={} window={}m hits={} images={}",
+                    sessionId, minutes, rows.size(), attached.size());
+            return AgentRecentContext.prepend(content, rows, minutes, attached);
         } catch (Exception e) {
             log.warn("Agent context load failed: {}", e.getMessage());
             return content;
         }
+    }
+
+    private Map<String, Integer> uploadUnseenHistoryImages(ChatLogService chatLog, MsgInfo msgInfo,
+                                                           String sessionId, String openId,
+                                                           List<ChatMessage> rows, List<Long> imageIds) {
+        int maxImages = properties.getContextMaxImages();
+        if (maxImages <= 0 || openId == null || openId.isBlank()) {
+            return Map.of();
+        }
+        List<String> inboundIds = new ArrayList<>();
+        for (ChatMessage row : rows) {
+            if (row.getMessageId() != null && !row.getMessageId().isBlank()) {
+                inboundIds.add(row.getMessageId());
+            }
+        }
+        Set<String> replied = inboundIds.isEmpty()
+                ? Set.of()
+                : chatLog.listRepliedMessageIds(msgInfo.accountId(), sessionId, inboundIds);
+        List<String> uploaded = new ArrayList<>();
+        for (int i = rows.size() - 1; i >= 0 && uploaded.size() < maxImages; i--) {
+            ChatMessage row = rows.get(i);
+            String messageId = row.getMessageId();
+            if (messageId == null || messageId.isBlank() || replied.contains(messageId)) {
+                continue;
+            }
+            MediaRef media = AgentRecentContext.mediaRefOf(row);
+            AgentMediaLoader.LoadedImage image = AgentMediaLoader.loadImageAttachment(row.getMsgType(), media);
+            if (image == null) {
+                continue;
+            }
+            try {
+                imageIds.add(client.uploadImage(openId, image.fileName(), image.bytes()));
+                uploaded.add(messageId);
+            } catch (Exception e) {
+                log.warn("Agent context image upload failed messageId={}: {}", messageId, e.getMessage());
+            }
+        }
+        if (uploaded.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> ordinals = new LinkedHashMap<>();
+        int n = 1;
+        for (ChatMessage row : rows) {
+            String messageId = row.getMessageId();
+            if (messageId != null && uploaded.contains(messageId)) {
+                ordinals.put(messageId, n++);
+            }
+        }
+        return ordinals;
     }
 
     private static boolean looksLikeTechnicalDump(String text) {

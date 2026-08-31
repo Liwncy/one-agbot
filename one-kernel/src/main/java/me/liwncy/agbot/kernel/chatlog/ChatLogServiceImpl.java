@@ -2,6 +2,7 @@ package me.liwncy.agbot.kernel.chatlog;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
@@ -15,8 +16,13 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class ChatLogServiceImpl implements ChatLogService {
     private static final Logger log = LoggerFactory.getLogger(ChatLogServiceImpl.class);
@@ -49,7 +55,7 @@ public class ChatLogServiceImpl implements ChatLogService {
         row.setSenderName(nullToEmpty(msgInfo.userName()));
         row.setMsgType(MsgType.normalize(msgInfo.msgType()));
         row.setContentText(ChatLogExtras.clip(firstNonBlank(msgInfo.msg(), msgInfo.path()), ChatLogExtras.MAX_CONTENT));
-        row.setAdapterExtra(ChatLogExtras.toJson(msgInfo.extra()));
+        row.setAdapterExtra(ChatLogExtras.toJson(extraWithPath(msgInfo)));
         row.setReferMessageId(emptyToNull(msgInfo.replyToMsgId()));
         row.setReplyIndex(0);
         row.setMsgTime(toMsgTime(msgInfo.createTime()));
@@ -168,6 +174,45 @@ public class ChatLogServiceImpl implements ChatLogService {
     }
 
     @Override
+    public Set<String> listRepliedMessageIds(String accountId, String sessionId,
+                                             Collection<String> inboundMessageIds) {
+        if (sessionId == null || sessionId.isBlank() || inboundMessageIds == null || inboundMessageIds.isEmpty()) {
+            return Set.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (String id : inboundMessageIds) {
+            String trimmed = emptyToNull(id);
+            if (trimmed != null && !ids.contains(trimmed)) {
+                ids.add(trimmed);
+            }
+            if (ids.size() >= 50) {
+                break;
+            }
+        }
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, blankTo(accountId, "default"));
+        wrapper.eq(ChatMessage::getSessionId, sessionId.trim());
+        wrapper.eq(ChatMessage::getDirection, DIRECTION_OUTBOUND);
+        wrapper.in(ChatMessage::getCausedByMessageId, ids);
+        wrapper.select(ChatMessage::getCausedByMessageId);
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> replied = new LinkedHashSet<>();
+        for (ChatMessage row : rows) {
+            String caused = emptyToNull(row.getCausedByMessageId());
+            if (caused != null) {
+                replied.add(caused);
+            }
+        }
+        return replied;
+    }
+
+    @Override
     public List<ChatMessage> listByMessageId(String accountId, String messageId) {
         if (messageId == null || messageId.isBlank()) {
             return List.of();
@@ -215,6 +260,18 @@ public class ChatLogServiceImpl implements ChatLogService {
             return "";
         }
         return raw.trim().replace("\\", "").replace("%", "").replace("_", "");
+    }
+
+    /** FILE 的 path 不在 extra 里；入库补一份，避免配文盖掉路径后历史图找不回。 */
+    private static Map<String, Object> extraWithPath(MsgInfo msgInfo) {
+        Map<String, Object> extra = msgInfo.extra() == null
+                ? new HashMap<>()
+                : new HashMap<>(msgInfo.extra());
+        String path = emptyToNull(msgInfo.path());
+        if (path != null && extra.get(ChannelExtraKeys.MEDIA_URL) == null) {
+            extra.put(ChannelExtraKeys.MEDIA_URL, path);
+        }
+        return extra;
     }
 
     private static void applySession(ChatMessage row, String userId, String groupId) {
