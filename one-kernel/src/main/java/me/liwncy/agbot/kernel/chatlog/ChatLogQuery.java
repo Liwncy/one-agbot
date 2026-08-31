@@ -11,6 +11,13 @@ public record ChatLogQuery(
         String platform,
         String direction,
         LocalDateTime since,
+        LocalDateTime until,
+        String senderId,
+        String senderName,
+        String keyword,
+        String msgType,
+        Long beforeId,
+        Long afterId,
         int limit
 ) {
 }

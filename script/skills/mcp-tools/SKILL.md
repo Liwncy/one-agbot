@@ -44,13 +44,20 @@ description: 小聪明儿调用 MCP 的分流与参数。通道聊天记录走 a
 
 查的是 one-agbot 自己库里的微信原文（含没回的），不是 SnailAI 对话记忆。认人、对「他/刚才那句」、翻更早记录时再用；普通接话不要每轮都翻。
 
-- 近期流水 → `agbot_chat_history`
+- 查记录 → `agbot_chat_history`
   - `scope`=本条前缀 `scope=` 后面那一段，原样复制（`group:…@chatroom` / `user:wxid_…`），不要加减 `@chatroom`，不要改成群名
-  - `limit` 可选，默认 20，最大 50
-  - 只要群员说话：`direction`=`inbound`
+  - 查某天 / 总结那天：`date`=`2026-08-29`（`8-29`、`29号` 也行）。不要只拿最近 20 条去猜
+  - 从某秒开始到当天结束：`date`=`2026-08-29 14:30:05`
+  - 查时间段（精确到秒）：`from` / `until`=`2026-08-29 17:00:00`。有 `date` 时不要再填这两个
+  - 最近几小时：`hours`（1-168）。有 `date`/`from`/`until` 时不要填
+  - 某人：`speaker`=斜杠前的 `wxid_…`；还没有 id 时可用返回里见过的昵称
+  - 搜原文：`keyword`=他提到的词
+  - 只要某种消息：`msgType`=`text` / `image` / `emoji` / `video` / `audio` / `app`
+  - 有时间窗时默认 200 条（最大 200），从窗口开头往后。只要群员说话：`direction`=`inbound`
+  - 满页带 `afterId=`：再查一次把两页拼一起再总结，不要说只有这些。最近流水满页才用 `beforeId`
   - 返回里斜杠前是稳定 id，对「他」用这个 id，不要用昵称
 - 引用/某条 id 对上是谁 → `agbot_chat_get`，`messageId`=通道消息 id
-- 没查到就说没找着，不要编是谁说的
+- 没查到就说没找着，不要编是谁说的。空结果若写了「窗口之前的补不回来」，就是库里没那天，不要换 scope 再瞎试
 
 ## 文生图
 

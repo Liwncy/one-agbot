@@ -1,14 +1,15 @@
 package me.liwncy.agbot.kernel.chatlog.mcp;
 
+import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.chatlog.ChatLogQuery;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
+import me.liwncy.agbot.kernel.chatlog.ChatLogTime;
 import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -20,8 +21,8 @@ public class AgbotChatMcpTool {
     private static final Logger log = LoggerFactory.getLogger(AgbotChatMcpTool.class);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int DEFAULT_LIMIT = 20;
-    private static final int MAX_LIMIT = 50;
-    private static final int MAX_HOURS = 168;
+    private static final int DEFAULT_WINDOW_LIMIT = 200;
+    private static final int MAX_LIMIT = 200;
     private static final int LINE_CLIP = 200;
 
     private final ChatLogService chatLog;
@@ -32,8 +33,11 @@ public class AgbotChatMcpTool {
 
     @McpTool(
             name = "agbot_chat_history",
-            description = "查询当前会话近期通道聊天记录（微信群/私聊原文，含未回复的）。"
-                    + "认人、对「他/刚才谁说」时用。scope 必须从本条消息前缀原样复制（group:… 或 user:…），不要猜、不要改 @chatroom。"
+            description = "查询当前会话通道聊天记录（微信群/私聊原文，含未回复的）。"
+                    + "认人、对「他/刚才谁说」、按某天/时间段翻记录时用。"
+                    + "scope 必须从本条消息前缀原样复制（group:… 或 user:…），不要猜、不要改 @chatroom。"
+                    + "查某天用 date（2026-08-29 / 8-29 / 29号，可带 14:30:05）。总结某天必须带 date，limit 默认 200。"
+                    + "按时间点用 from/until，精确到秒。满页用 afterId 继续拿更晚的，再一起总结；不要说只有 50 条。"
                     + "闲聊接话不要调。accountId 默认 default。"
     )
     public String history(
@@ -41,10 +45,26 @@ public class AgbotChatMcpTool {
             String scope,
             @McpToolParam(description = "机器人账号槽，默认 default")
             String accountId,
-            @McpToolParam(description = "条数 1-50，默认 20")
+            @McpToolParam(description = "条数 1-200。无时间窗默认 20；有 date/from/until 默认 200")
             Integer limit,
-            @McpToolParam(description = "只看最近 N 小时，1-168；不传则按条数")
+            @McpToolParam(description = "某一天。可带时分秒：2026-08-29 或 2026-08-29 14:30:05（从该秒到当天结束）。也可用 8-29、29号")
+            String date,
+            @McpToolParam(description = "窗口起点，含，精确到秒。2026-08-29 或 2026-08-29 17:00:00。有 date 时忽略")
+            String from,
+            @McpToolParam(description = "窗口终点，不含这一刻，精确到秒。只写日期则含当天。有 date 时忽略")
+            String until,
+            @McpToolParam(description = "只看最近 N 小时，1-168。有 date/from/until 时忽略")
             Integer hours,
+            @McpToolParam(description = "发言人：wxid_… 精确匹配；否则按 id 或昵称模糊匹配")
+            String speaker,
+            @McpToolParam(description = "正文关键词，模糊匹配 content")
+            String keyword,
+            @McpToolParam(description = "消息类型：text/image/emoji/video/audio/app/link 等")
+            String msgType,
+            @McpToolParam(description = "翻更早：填上一页返回的 beforeId（最近流水用）")
+            String beforeId,
+            @McpToolParam(description = "翻更晚：总结某天满页后填返回的 afterId，继续拿后面")
+            String afterId,
             @McpToolParam(description = "可选 inbound / outbound；不传则全部")
             String direction,
             @McpToolParam(description = "可选 wechat / example；golem 会当成 wechat")
@@ -54,23 +74,38 @@ public class AgbotChatMcpTool {
         if (sessionId.isEmpty()) {
             return "缺少 scope。请从本条消息前缀复制 scope= 后面那一段（group:… 或 user:…）。";
         }
-        int size = sanitizeLimit(limit);
-        LocalDateTime since = toSince(hours);
+        ChatLogTime.Resolve window = ChatLogTime.resolve(date, from, until, hours);
+        if (window.failed()) {
+            return window.error();
+        }
+        boolean windowed = window.window().since() != null || window.window().until() != null;
+        int size = sanitizeLimit(limit, windowed);
+        SpeakerFilter who = speakerFilter(speaker);
+        Long olderThan = parseId(beforeId);
+        Long newerThan = parseId(afterId);
+        String type = normalizeMsgType(msgType);
         ChatLogQuery query = new ChatLogQuery(
                 blankTo(accountId, "default"),
                 sessionId,
                 blankToNull(platform),
                 normalizeDirection(direction),
-                since,
+                window.window().since(),
+                window.window().until(),
+                who.senderId(),
+                who.senderName(),
+                blankToNull(keyword),
+                type,
+                olderThan,
+                newerThan,
                 size
         );
         List<ChatMessage> rows = chatLog.listRecent(query);
-        log.info("MCP agbot_chat_history session={} account={} limit={} hours={} hits={}",
-                sessionId, query.accountId(), size, hours, rows.size());
+        log.info("MCP agbot_chat_history session={} account={} limit={} window={} speaker={} keyword={} type={} beforeId={} afterId={} hits={}",
+                sessionId, query.accountId(), size, window.window().label(), speaker, keyword, type, olderThan, newerThan, rows.size());
         if (rows.isEmpty()) {
-            return "没有找到记录。核对 scope 是否与前缀完全一致（含 @chatroom）。";
+            return emptyHint(window.window());
         }
-        return formatList(rows);
+        return formatList(rows, window.window(), size, windowed && olderThan == null);
     }
 
     @McpTool(
@@ -92,7 +127,7 @@ public class AgbotChatMcpTool {
         if (rows.isEmpty()) {
             return "没查到这条消息。";
         }
-        return formatList(rows);
+        return formatList(rows, null, Integer.MAX_VALUE, false);
     }
 
     static String normalizeScope(String scope) {
@@ -113,19 +148,58 @@ public class AgbotChatMcpTool {
         return "";
     }
 
-    private static int sanitizeLimit(Integer limit) {
+    private static int sanitizeLimit(Integer limit, boolean windowed) {
         if (limit == null || limit < 1) {
-            return DEFAULT_LIMIT;
+            return windowed ? DEFAULT_WINDOW_LIMIT : DEFAULT_LIMIT;
         }
         return Math.min(limit, MAX_LIMIT);
     }
 
-    private static LocalDateTime toSince(Integer hours) {
-        if (hours == null || hours < 1) {
+    private static String emptyHint(ChatLogTime.Window window) {
+        StringBuilder sb = new StringBuilder("没有找到记录。核对 scope 是否与前缀完全一致（含 @chatroom）。");
+        if (window != null && (window.since() != null || window.until() != null)) {
+            sb.append(" 当前窗口：").append(window.label()).append("。");
+            sb.append("库里只存接入后的通道原文，窗口之前的补不回来。");
+        }
+        return sb.toString();
+    }
+
+    private static SpeakerFilter speakerFilter(String speaker) {
+        String text = blankToNull(speaker);
+        if (text == null) {
+            return new SpeakerFilter(null, null);
+        }
+        if (isStableId(text)) {
+            return new SpeakerFilter(text, null);
+        }
+        return new SpeakerFilter(text, text);
+    }
+
+    private static boolean isStableId(String speaker) {
+        String text = speaker.toLowerCase(Locale.ROOT);
+        return text.startsWith("wxid_") || text.contains("@");
+    }
+
+    private static String normalizeMsgType(String msgType) {
+        String text = blankToNull(msgType);
+        if (text == null) {
             return null;
         }
-        int span = Math.min(hours, MAX_HOURS);
-        return LocalDateTime.now().minusHours(span);
+        String normalized = MsgType.normalize(text);
+        return MsgType.ALL.contains(normalized) ? normalized : null;
+    }
+
+    private static Long parseId(String raw) {
+        String text = blankToNull(raw);
+        if (text == null) {
+            return null;
+        }
+        try {
+            long id = Long.parseLong(text);
+            return id > 0 ? id : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static String normalizeDirection(String direction) {
@@ -139,13 +213,34 @@ public class AgbotChatMcpTool {
         return null;
     }
 
-    private static String formatList(List<ChatMessage> rows) {
+    private static String formatList(List<ChatMessage> rows, ChatLogTime.Window window, int pageSize, boolean pageForward) {
         StringBuilder sb = new StringBuilder();
-        sb.append("共 ").append(rows.size()).append(" 条（旧→新）\n");
+        sb.append("共 ").append(rows.size()).append(" 条（旧→新）");
+        if (window != null) {
+            sb.append(" 窗口=").append(window.label());
+        }
+        sb.append('\n');
         for (ChatMessage row : rows) {
             sb.append(formatLine(row)).append('\n');
         }
+        if (rows.size() >= pageSize && pageSize > 0 && pageSize < Integer.MAX_VALUE) {
+            if (pageForward) {
+                Long newest = rows.get(rows.size() - 1).getId();
+                if (newest != null) {
+                    sb.append("本页已满，窗口里可能还有更晚。再查时 afterId=").append(newest)
+                            .append("，把两页拼一起再总结，不要说已经看完。");
+                }
+            } else {
+                Long oldest = rows.get(0).getId();
+                if (oldest != null) {
+                    sb.append("本页已满，可能还有更早。再查时 beforeId=").append(oldest);
+                }
+            }
+        }
         return sb.toString().trim();
+    }
+
+    private record SpeakerFilter(String senderId, String senderName) {
     }
 
     private static String formatLine(ChatMessage row) {

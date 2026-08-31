@@ -89,7 +89,7 @@ public class ChatLogServiceImpl implements ChatLogService {
         if (query == null || query.sessionId() == null || query.sessionId().isBlank()) {
             return List.of();
         }
-        int limit = query.limit() < 1 ? 20 : Math.min(query.limit(), 50);
+        int limit = query.limit() < 1 ? 20 : Math.min(query.limit(), 200);
         LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
         wrapper.eq(ChatMessage::getAccountId, blankTo(query.accountId(), "default"));
         wrapper.eq(ChatMessage::getSessionId, query.sessionId().trim());
@@ -102,11 +102,38 @@ public class ChatLogServiceImpl implements ChatLogService {
         if (query.since() != null) {
             wrapper.ge(ChatMessage::getMsgTime, query.since());
         }
-        wrapper.orderByDesc(ChatMessage::getId);
+        if (query.until() != null) {
+            wrapper.lt(ChatMessage::getMsgTime, query.until());
+        }
+        applySpeaker(wrapper, query);
+        String keyword = sanitizeLike(query.keyword());
+        if (!keyword.isEmpty()) {
+            wrapper.like(ChatMessage::getContentText, keyword);
+        }
+        if (query.msgType() != null && !query.msgType().isBlank()) {
+            wrapper.eq(ChatMessage::getMsgType, query.msgType().trim());
+        }
+        boolean pageOlder = query.beforeId() != null && query.beforeId() > 0;
+        boolean pageNewer = !pageOlder && query.afterId() != null && query.afterId() > 0;
+        if (pageOlder) {
+            wrapper.lt(ChatMessage::getId, query.beforeId());
+        } else if (pageNewer) {
+            wrapper.gt(ChatMessage::getId, query.afterId());
+        }
+        // 有时间窗且不是往回翻：从窗口开头往后拿，方便总结某天
+        boolean chronologicalAsc = pageNewer || (query.since() != null && !pageOlder);
+        if (chronologicalAsc) {
+            wrapper.orderByAsc(ChatMessage::getId);
+        } else {
+            wrapper.orderByDesc(ChatMessage::getId);
+        }
         wrapper.last("LIMIT " + limit);
         List<ChatMessage> rows = mapper.selectList(wrapper);
         if (rows == null || rows.isEmpty()) {
             return List.of();
+        }
+        if (chronologicalAsc) {
+            return rows;
         }
         List<ChatMessage> chronological = new ArrayList<>(rows);
         Collections.reverse(chronological);
@@ -136,6 +163,31 @@ public class ChatLogServiceImpl implements ChatLogService {
             log.warn("Chat log insert failed platform={} adapter={} messageId={}: {}",
                     row.getPlatform(), row.getAdapter(), row.getMessageId(), e.getMessage());
         }
+    }
+
+    private static void applySpeaker(LambdaQueryWrapper<ChatMessage> wrapper, ChatLogQuery query) {
+        String senderId = emptyToNull(query.senderId());
+        String nameLike = sanitizeLike(query.senderName());
+        if (senderId != null && !nameLike.isEmpty()) {
+            wrapper.and(w -> w.eq(ChatMessage::getSenderId, senderId)
+                    .or()
+                    .like(ChatMessage::getSenderName, nameLike));
+            return;
+        }
+        if (senderId != null) {
+            wrapper.eq(ChatMessage::getSenderId, senderId);
+            return;
+        }
+        if (!nameLike.isEmpty()) {
+            wrapper.like(ChatMessage::getSenderName, nameLike);
+        }
+    }
+
+    private static String sanitizeLike(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        return raw.trim().replace("\\", "").replace("%", "").replace("_", "");
     }
 
     private static void applySession(ChatMessage row, String userId, String groupId) {
