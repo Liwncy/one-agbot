@@ -1,5 +1,6 @@
 package me.liwncy.agbot.agent.roleplay;
 
+import me.liwncy.agbot.kernel.api.agent.RoleplayCommands;
 import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
@@ -15,7 +16,7 @@ import java.util.regex.Pattern;
 /**
  * 角色：口令拦截、Redis 绑定、进模型前注入。
  */
-public class RoleplayService {
+public class RoleplayService implements RoleplayCommands {
     private static final Logger log = LoggerFactory.getLogger("agbot.agent");
     private static final Pattern ADD_CMD = Pattern.compile(
             "^(?:加角色|增加角色|新增角色)\\s*[:：]?\\s*(.*)$",
@@ -39,10 +40,15 @@ public class RoleplayService {
      * 整句换角色 / 查当前角色。已处理则返回回复，不进模型。
      */
     public String tryHandleCommand(MsgInfo msg) {
+        return tryHandle(msg, msg == null ? null : msg.msg());
+    }
+
+    @Override
+    public String tryHandle(MsgInfo msg, String commandText) {
         if (msg == null || !MsgType.TEXT.equals(MsgType.normalize(msg.msgType()))) {
             return null;
         }
-        String stripped = stripPrefix(msg.msg());
+        String stripped = stripPrefix(commandText != null ? commandText : msg.msg());
         if (stripped.isEmpty()) {
             return null;
         }

@@ -14,6 +14,7 @@ import me.liwncy.agbot.agent.roleplay.RoleplaySessionStore;
 import me.liwncy.agbot.agent.roleplay.mapper.RoleplayCharacterMapper;
 import me.liwncy.agbot.common.mybatis.config.MybatisPlusConfig;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
+import me.liwncy.agbot.kernel.api.agent.RoleplayCommands;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
 import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
@@ -72,7 +73,7 @@ public class AgentAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean({RoleplayService.class, RoleplayCommands.class})
     public RoleplayService roleplayService(RoleplaySessionStore store,
                                            ConversationMapper conversationMapper,
                                            RoleplayCatalog catalog) {

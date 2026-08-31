@@ -9,6 +9,7 @@ import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondMode;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.GolemMentionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
+import me.liwncy.agbot.adapter.golem.session.GolemRoleplayCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
@@ -50,6 +51,7 @@ public class GolemWebhookController {
     private final GolemSessionActivation sessionActivation;
     private final GolemSessionCommandHandler sessionCommandHandler;
     private final GolemGroupModeCommandHandler groupModeCommandHandler;
+    private final GolemRoleplayCommandHandler roleplayCommandHandler;
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
     private final ChatLogService chatLog;
@@ -63,6 +65,7 @@ public class GolemWebhookController {
                                   GolemSessionActivation sessionActivation,
                                   GolemSessionCommandHandler sessionCommandHandler,
                                   GolemGroupModeCommandHandler groupModeCommandHandler,
+                                  GolemRoleplayCommandHandler roleplayCommandHandler,
                                   GolemOwnerCommandHandler ownerCommandHandler,
                                   GolemMediaResolver mediaResolver,
                                   ObjectProvider<ChatLogService> chatLog,
@@ -75,6 +78,7 @@ public class GolemWebhookController {
         this.sessionActivation = sessionActivation;
         this.sessionCommandHandler = sessionCommandHandler;
         this.groupModeCommandHandler = groupModeCommandHandler;
+        this.roleplayCommandHandler = roleplayCommandHandler;
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
         this.chatLog = chatLog.getIfAvailable();
@@ -109,6 +113,7 @@ public class GolemWebhookController {
         int skippedInactive = 0;
         int sessionCommands = 0;
         int modeCommands = 0;
+        int roleplayCommands = 0;
         int ownerCommands = 0;
         for (MsgInfo raw : messages) {
             MsgInfo msg = mediaResolver.resolve(raw);
@@ -125,6 +130,11 @@ public class GolemWebhookController {
             // 群模式 / 规则指令（主人，未激活也可改）
             if (groupModeCommandHandler.tryHandle(msg)) {
                 modeCommands++;
+                continue;
+            }
+            // 切角色：与模式同一层，点名门之前拦截
+            if (roleplayCommandHandler.tryHandle(msg)) {
+                roleplayCommands++;
                 continue;
             }
 
@@ -199,11 +209,11 @@ public class GolemWebhookController {
                 }
             });
         }
-        if (accepted > 0 || sessionCommands > 0 || modeCommands > 0 || ownerCommands > 0
+        if (accepted > 0 || sessionCommands > 0 || modeCommands > 0 || roleplayCommands > 0 || ownerCommands > 0
                 || skippedNoMention > 0 || skippedDisabled > 0) {
-            log.info("Golem webhook accountId={} accepted={} skippedMode={} skippedDisabled={} skippedInactive={} sessionCommands={} modeCommands={} ownerCommands={}",
+            log.info("Golem webhook accountId={} accepted={} skippedMode={} skippedDisabled={} skippedInactive={} sessionCommands={} modeCommands={} roleplayCommands={} ownerCommands={}",
                     accountId, accepted, skippedNoMention, skippedDisabled, skippedInactive,
-                    sessionCommands, modeCommands, ownerCommands);
+                    sessionCommands, modeCommands, roleplayCommands, ownerCommands);
         } else if (skippedInactive > 0) {
             log.debug("Golem webhook accountId={} skippedInactive={}", accountId, skippedInactive);
         }
@@ -215,6 +225,7 @@ public class GolemWebhookController {
                 "skippedInactive", skippedInactive,
                 "sessionCommands", sessionCommands,
                 "modeCommands", modeCommands,
+                "roleplayCommands", roleplayCommands,
                 "ownerCommands", ownerCommands
         );
     }
