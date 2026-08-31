@@ -6,6 +6,12 @@ import me.liwncy.agbot.kernel.api.message.MsgType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -56,10 +62,25 @@ final class AgentMediaLoader {
                 log.warn("Image too large for OpenAPI attachment bytes={}", bytes.length);
                 return null;
             }
-            String mime = firstNonBlank(media.mime(), sniffMime(bytes), "image/jpeg");
+            String sniffed = sniffMime(bytes);
+            String mime = firstNonBlank(sniffed, media.mime(), "image/jpeg");
             if (!isImageMime(mime)) {
                 log.warn("Skip non-image mime for attachment mime={}", mime);
                 return null;
+            }
+            // SnailAI OpenAPI 只收 JPG/PNG/WEBP；微信表情多为 GIF，取首帧压成 JPG
+            if (isGifMime(mime) || isGifMime(sniffed)) {
+                byte[] jpeg = gifToJpeg(bytes);
+                if (jpeg == null || jpeg.length == 0) {
+                    log.warn("Convert gif to jpeg failed type={} bytes={}", type, bytes.length);
+                    return null;
+                }
+                if (jpeg.length > MAX_IMAGE_BYTES) {
+                    log.warn("Converted jpeg too large for OpenAPI attachment bytes={}", jpeg.length);
+                    return null;
+                }
+                log.info("Converted gif attachment to jpeg srcBytes={} jpegBytes={}", bytes.length, jpeg.length);
+                return new LoadedImage(jpeg, "image/jpeg", "chat-" + type + ".jpg");
             }
             String name = "chat-" + type + extOf(mime);
             return new LoadedImage(bytes, mime, name);
@@ -97,6 +118,37 @@ final class AgentMediaLoader {
         String m = mime.toLowerCase(Locale.ROOT);
         return m.startsWith("image/")
                 && (m.contains("jpeg") || m.contains("jpg") || m.contains("png") || m.contains("webp") || m.contains("gif"));
+    }
+
+    private static boolean isGifMime(String mime) {
+        return mime != null && mime.toLowerCase(Locale.ROOT).contains("gif");
+    }
+
+    /** 动图只取首帧；透明通道铺白底（JPEG 无 alpha）。 */
+    private static byte[] gifToJpeg(byte[] gifBytes) {
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(gifBytes));
+            if (src == null || src.getWidth() <= 0 || src.getHeight() <= 0) {
+                return null;
+            }
+            BufferedImage rgb = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = rgb.createGraphics();
+            try {
+                g.setColor(Color.WHITE);
+                g.fillRect(0, 0, src.getWidth(), src.getHeight());
+                g.drawImage(src, 0, 0, null);
+            } finally {
+                g.dispose();
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            if (!ImageIO.write(rgb, "jpg", out)) {
+                return null;
+            }
+            return out.toByteArray();
+        } catch (Exception e) {
+            log.warn("gifToJpeg failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     private static String sniffMime(byte[] bytes) {
