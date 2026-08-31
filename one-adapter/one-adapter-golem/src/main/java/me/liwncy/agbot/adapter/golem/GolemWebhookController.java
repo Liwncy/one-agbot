@@ -12,6 +12,7 @@ import me.liwncy.agbot.adapter.golem.session.GolemOwnerCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemRoleplayCommandHandler;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionActivation;
 import me.liwncy.agbot.adapter.golem.session.GolemSessionCommandHandler;
+import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
@@ -132,8 +133,27 @@ public class GolemWebhookController {
                 modeCommands++;
                 continue;
             }
-            // 切角色：与模式同一层，点名门之前拦截
-            if (roleplayCommandHandler.tryHandle(msg)) {
+
+            boolean mentioned = isBotMentioned(msg);
+            GolemGroupRespondMode mode = msg.isPrivateChat()
+                    ? null
+                    : respondPolicy.getMode(msg.accountId(), msg.groupId());
+            boolean followUpApplies = mode == GolemGroupRespondMode.MENTION
+                    || mode == GolemGroupRespondMode.SMART
+                    || mode == GolemGroupRespondMode.RULE
+                    || mode == GolemGroupRespondMode.FULL;
+            Duration followUp = !followUpApplies
+                    ? Duration.ZERO
+                    : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
+            boolean activated = !msg.isPrivateChat()
+                    && followUpApplies
+                    && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId(), followUp);
+            boolean conversationBusy = !msg.isPrivateChat() && turnGuard.isBusy(SessionKeys.of(msg));
+            boolean allowed = msg.isPrivateChat()
+                    || respondPolicy.allows(msg, mentioned, activated, conversationBusy);
+
+            // 切角色与模式同一层；白名单/关键词/主人直接放过，其余仍过点名
+            if ((allowed || isOwner(msg)) && roleplayCommandHandler.tryHandle(msg)) {
                 roleplayCommands++;
                 continue;
             }
@@ -160,22 +180,7 @@ public class GolemWebhookController {
                 }
             }
 
-            boolean mentioned = isBotMentioned(msg);
-            GolemGroupRespondMode mode = msg.isPrivateChat()
-                    ? null
-                    : respondPolicy.getMode(msg.accountId(), msg.groupId());
-            boolean followUpApplies = mode == GolemGroupRespondMode.MENTION
-                    || mode == GolemGroupRespondMode.SMART
-                    || mode == GolemGroupRespondMode.RULE
-                    || mode == GolemGroupRespondMode.FULL;
-            Duration followUp = !followUpApplies
-                    ? Duration.ZERO
-                    : respondPolicy.getFollowUpWindow(msg.accountId(), msg.groupId());
-            boolean activated = !msg.isPrivateChat()
-                    && followUpApplies
-                    && mentionActivation.isActive(msg.accountId(), msg.groupId(), msg.userId(), followUp);
-            boolean conversationBusy = !msg.isPrivateChat() && turnGuard.isBusy(SessionKeys.of(msg));
-            if (!msg.isPrivateChat() && !respondPolicy.allows(msg, mentioned, activated, conversationBusy)) {
+            if (!allowed) {
                 skippedNoMention++;
                 log.info("Skip by group mode accountId={} groupId={} userId={} mode={} followUp={}s mentioned={} activated={} busy={} msg={}",
                         msg.accountId(),
@@ -240,6 +245,18 @@ public class GolemWebhookController {
             log.warn("Chat log inbound failed accountId={} msgId={}: {}",
                     msg.accountId(), msg.msgId(), e.getMessage());
         }
+    }
+
+    private boolean isOwner(MsgInfo msg) {
+        if (msg == null) {
+            return false;
+        }
+        Object flag = msg.extra().get(ChannelExtraKeys.OWNER);
+        if (Boolean.TRUE.equals(flag)) {
+            return true;
+        }
+        String ownerId = trim(properties.getOwnerWechatId());
+        return !ownerId.isEmpty() && ownerId.equals(trim(msg.userId()));
     }
 
     private static boolean isBotMentioned(MsgInfo msg) {

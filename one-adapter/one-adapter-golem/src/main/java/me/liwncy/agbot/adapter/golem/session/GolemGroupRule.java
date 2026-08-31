@@ -7,7 +7,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 规则模式：用户白名单 + 关键词（命中任一即放行；@ 另计）。
+ * 用户白名单 + 关键词（命中任一即直接放过；@ 另计）。
  */
 public record GolemGroupRule(List<String> userIds, List<String> keywords) {
 

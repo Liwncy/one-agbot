@@ -9,7 +9,7 @@ import java.util.Locale;
  * 群聊响应模式（按群持久化，主人指令切换）。
  */
 public enum GolemGroupRespondMode {
-    /** 要 @ / 点名（或短窗口跟聊）才回 */
+    /** 要 @ / 点名（或短窗口跟聊）才回；白名单和关键词直接放过 */
     MENTION,
     /** 会话开启后群内全量响应 */
     FULL,
@@ -32,11 +32,11 @@ public enum GolemGroupRespondMode {
 
     public String tip() {
         return switch (this) {
-            case MENTION -> "点到我或引用我才回（跟聊窗口内可免）";
-            case FULL -> "群里说话我都接；会话忙时只接点名";
+            case MENTION -> "点到我或引用我才回；白名单和关键词直接放过";
+            case FULL -> "群里说话我都接；会话忙时只接点名、白名单或关键词";
             case RULE -> "只听白名单或关键词（点到我也能触发）";
-            case RANDOM -> "群里任何消息按概率接；不看点名；会话忙时不接";
-            case SMART -> "点名/跟聊或按概率都会接；会话忙时不随机";
+            case RANDOM -> "按概率接；白名单和关键词直接放过；会话忙时不随机";
+            case SMART -> "点名/跟聊或按概率都会接；白名单和关键词直接放过";
         };
     }
 
