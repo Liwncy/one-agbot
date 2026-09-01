@@ -2,6 +2,7 @@ package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
+import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.GolemGroupModeCommandHandler;
@@ -55,6 +56,7 @@ public class GolemWebhookController {
     private final GolemRoleplayCommandHandler roleplayCommandHandler;
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
+    private final GolemQuoteMediaEnricher quoteMediaEnricher;
     private final ChatLogService chatLog;
     private final ConversationTurnGuard turnGuard;
 
@@ -69,6 +71,7 @@ public class GolemWebhookController {
                                   GolemRoleplayCommandHandler roleplayCommandHandler,
                                   GolemOwnerCommandHandler ownerCommandHandler,
                                   GolemMediaResolver mediaResolver,
+                                  GolemQuoteMediaEnricher quoteMediaEnricher,
                                   ObjectProvider<ChatLogService> chatLog,
                                   ConversationTurnGuard turnGuard) {
         this.runtime = runtime;
@@ -82,6 +85,7 @@ public class GolemWebhookController {
         this.roleplayCommandHandler = roleplayCommandHandler;
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
+        this.quoteMediaEnricher = quoteMediaEnricher;
         this.chatLog = chatLog.getIfAvailable();
         this.turnGuard = turnGuard;
     }
@@ -117,7 +121,7 @@ public class GolemWebhookController {
         int roleplayCommands = 0;
         int ownerCommands = 0;
         for (MsgInfo raw : messages) {
-            MsgInfo msg = mediaResolver.resolve(raw);
+            MsgInfo msg = mediaResolver.resolve(quoteMediaEnricher.enrich(raw));
             if (!botId.isEmpty() && botId.equals(msg.userId())) {
                 continue;
             }

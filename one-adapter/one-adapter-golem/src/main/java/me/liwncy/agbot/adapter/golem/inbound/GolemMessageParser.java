@@ -267,6 +267,11 @@ public final class GolemMessageParser {
                     extra.put("aeskey", aes);
                 }
                 putIfPresent(extra, "length", firstNonBlank(xmlAttr(bodyXml, "length"), xmlAttr(bodyXml, "hdlength")));
+                putIfPresent(extra, ChannelExtraKeys.THUMB, xmlAttr(bodyXml, "cdnthumburl"));
+                putIfPresent(extra, "thumbAeskey", firstNonBlank(
+                        xmlAttr(bodyXml, "cdnthumbaeskey"),
+                        xmlAttr(bodyXml, "cdnthumbkey"),
+                        aes));
                 if (!buffer.isBlank()) {
                     MediaRef ref = MediaRef.base64(buffer, "image/jpeg");
                     String path = ref.applyToExtra(extra);
@@ -405,14 +410,14 @@ public final class GolemMessageParser {
             String referBlock = matchGroup(REFER_MSG_BLOCK, appXml);
             String referXml = referBlock.isBlank() ? appXml : referBlock;
             String referType = matchGroup(REFER_TYPE, referXml);
-            String referRaw = decodeXmlDeep(matchGroup(REFER_CONTENT, referXml));
+            String referRaw = decodeXmlDeep(firstNonEmptyContent(referXml));
             String svrid = matchGroup(REFER_SVRID, referXml);
             String quoteMsgType = quoteMsgTypeOf(referType);
             String quoteContent = summarizeReferContent(referType, referRaw);
             putIfPresent(extra, ChannelExtraKeys.QUOTE_MSG_TYPE, quoteMsgType);
             putIfPresent(extra, ChannelExtraKeys.QUOTE_CONTENT, quoteContent);
             putReferSender(referXml, extra);
-            String mediaPath = attachReferMedia(referType, referRaw, extra);
+            String mediaPath = attachReferMedia(referType, referRaw, extra, referXml);
             if (looksLikeXml(referRaw)) {
                 putIfPresent(extra, "quoteRawPreview", preview(referRaw, 160));
             }
@@ -600,11 +605,9 @@ public final class GolemMessageParser {
      * 对齐 xchatbot parse-refer-msg：从 refer content 抽出媒体定位符写入 extra/path。
      * 不在此下载；PLATFORM + aeskey 交给 {@code GolemMediaResolver}。
      */
-    private static String attachReferMedia(String wechatReferType, String referRaw, Map<String, Object> extra) {
+    private static String attachReferMedia(String wechatReferType, String referRaw,
+                                           Map<String, Object> extra, String referXml) {
         String content = normalizeReferPayload(referRaw);
-        if (content.isBlank()) {
-            return null;
-        }
         String type = wechatReferType == null ? "" : wechatReferType.trim();
         return switch (type) {
             case "3" -> {
@@ -617,6 +620,11 @@ public final class GolemMessageParser {
                 putIfPresent(extra, "aeskey", aes);
                 putIfPresent(extra, "length",
                         firstNonBlank(xmlAttr(content, "length"), xmlAttr(content, "hdlength")));
+                putIfPresent(extra, ChannelExtraKeys.THUMB, xmlAttr(content, "cdnthumburl"));
+                putIfPresent(extra, "thumbAeskey", firstNonBlank(
+                        xmlAttr(content, "cdnthumbaeskey"),
+                        xmlAttr(content, "cdnthumbkey"),
+                        aes));
                 if (cdn.isBlank()) {
                     yield null;
                 }
@@ -664,11 +672,13 @@ public final class GolemMessageParser {
                 yield mediaRefOfLocator(path).applyToExtra(extra);
             }
             case "47" -> {
-                // refer content 常整段 HTML 实体编码；多解几次再抽 <emoji>
+                // refer content 常整段 HTML 实体编码；content 为空时再扫整个 refermsg
                 String emojiXml = firstNonBlank(
                         findEmojiXml(content),
                         findEmojiXml(referRaw),
-                        content);
+                        findEmojiXml(decodeXmlDeep(content)),
+                        findEmojiXml(referXml),
+                        findEmojiXml(decodeXmlDeep(referXml == null ? "" : referXml)));
                 attachEmojiFields(emojiXml, extra);
                 String path = decodeMediaUrl(firstNonBlank(
                         xmlAttr(emojiXml, "cdnurl"),
@@ -676,8 +686,13 @@ public final class GolemMessageParser {
                         xmlAttr(emojiXml, "externurl"),
                         xmlAttr(emojiXml, "thumburl"),
                         xmlAttr(emojiXml, "emoji_url")));
+                putIfPresent(extra, "emojiUrlCandidates", joinNonBlank("|",
+                        decodeMediaUrl(xmlAttr(emojiXml, "cdnurl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "encrypturl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "externurl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "thumburl")),
+                        decodeMediaUrl(xmlAttr(emojiXml, "emoji_url"))));
                 if (path.isBlank()) {
-                    // 至少留下 md5，供 Agent 调表情库；图由 MediaResolver 再试 svrid 拉取
                     yield null;
                 }
                 yield mediaRefOfLocator(path).applyToExtra(extra);
@@ -1026,6 +1041,21 @@ public final class GolemMessageParser {
         }
         Matcher m = pattern.matcher(text);
         return m.find() ? m.group(1).trim() : "";
+    }
+
+    /** 引用块里常有空的 {@code <content/>}，取第一个非空。 */
+    private static String firstNonEmptyContent(String xml) {
+        if (xml == null || xml.isBlank()) {
+            return "";
+        }
+        Matcher m = REFER_CONTENT.matcher(xml);
+        while (m.find()) {
+            String raw = m.group(1);
+            if (raw != null && !raw.isBlank()) {
+                return raw.trim();
+            }
+        }
+        return "";
     }
 
     private static String decodeXml(String text) {

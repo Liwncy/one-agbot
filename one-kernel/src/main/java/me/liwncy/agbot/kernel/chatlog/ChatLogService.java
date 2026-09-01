@@ -39,4 +39,9 @@ public interface ChatLogService {
      * 按通道消息 id 查找（同一 account 下可能跨 platform 多条）。
      */
     List<ChatMessage> listByMessageId(String accountId, String messageId);
+
+    /**
+     * 按引用 svrid 找回原 inbound（message_id 等于 svrid，或 {@code svrid:…} 打包 id）。
+     */
+    List<ChatMessage> listInboundBySvrid(String accountId, String sessionId, String svrid);
 }

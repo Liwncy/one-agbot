@@ -123,19 +123,9 @@ public class GolemMediaResolver {
                     return new ResolvedMedia(bytes, guessExt(type, string(extra.get(ChannelExtraKeys.MEDIA_MIME))),
                             guessMime(type, string(extra.get(ChannelExtraKeys.MEDIA_MIME))));
                 }
+                log.warn("Golem CDN empty type={} id={}", type, preview(cdnId));
             } catch (Exception e) {
-                log.debug("CDN download failed, fallback msg download: {}", e.getMessage());
-            }
-            // 视频可尝试封面（引用视频给 Agent 看封面更有用）
-            if (MsgType.VIDEO.equals(type) && !thumb.isBlank() && !thumbAes.isBlank()) {
-                try {
-                    byte[] cover = apiClient.cdnDownloadImage(thumb, thumbAes);
-                    if (cover.length > 0) {
-                        return new ResolvedMedia(cover, "jpg", "image/jpeg");
-                    }
-                } catch (Exception ignored) {
-                    // continue
-                }
+                log.warn("Golem CDN fail type={} id={}: {}", type, preview(cdnId), e.toString());
             }
         }
 
@@ -173,11 +163,45 @@ public class GolemMediaResolver {
                 if (bytes != null && bytes.length > 0) {
                     return new ResolvedMedia(bytes, guessExt(type, null), guessMime(type, null));
                 }
+                log.warn("Golem message-download empty type={} svrid={}", type, ids[0]);
             } catch (Exception e) {
-                log.debug("Message download failed: {}", e.getMessage());
+                log.warn("Golem message-download fail type={} svrid={}: {}", type, ids[0], e.toString());
             }
         }
+        ResolvedMedia cover = tryThumb(type, thumb, thumbAes);
+        if (cover != null) {
+            return cover;
+        }
         return null;
+    }
+
+    /** 原图/表情 CDN 或按消息下载失败后，再用缩略图（图/表情/视频封面）。 */
+    private ResolvedMedia tryThumb(String type, String thumb, String thumbAes) {
+        if (!thumbFallback(type) || thumb.isBlank()) {
+            return null;
+        }
+        log.warn("Golem media fallback thumb type={} locator={}", type, preview(thumb));
+        try {
+            byte[] bytes;
+            if (looksLikeHttp(thumb)) {
+                bytes = httpDownload(thumb);
+            } else if (!thumbAes.isBlank()) {
+                bytes = apiClient.cdnDownloadImage(thumb, thumbAes);
+            } else {
+                return null;
+            }
+            if (bytes != null && bytes.length > 0) {
+                return new ResolvedMedia(bytes, "jpg", "image/jpeg");
+            }
+            log.warn("Golem CDN empty type=thumb id={}", preview(thumb));
+        } catch (Exception e) {
+            log.warn("Golem CDN fail type=thumb id={}: {}", preview(thumb), e.toString());
+        }
+        return null;
+    }
+
+    private static boolean thumbFallback(String type) {
+        return MsgType.IMAGE.equals(type) || MsgType.EMOJI.equals(type) || MsgType.VIDEO.equals(type);
     }
 
     /** 表情一律落盘；图片遇到微信/QQ 图床也落盘（Agent 直拉常 403）。 */

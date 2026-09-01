@@ -2,6 +2,8 @@ package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
+import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
+import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupRespondPolicy;
 import me.liwncy.agbot.adapter.golem.session.FileGolemSessionActivation;
@@ -62,6 +64,12 @@ public class GolemConfiguration {
     @ConditionalOnMissingBean(GolemMediaResolver.class)
     public GolemMediaResolver golemMediaResolver(GolemApiClient apiClient, GolemProperties properties) {
         return new GolemMediaResolver(apiClient, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GolemQuoteMediaEnricher.class)
+    public GolemQuoteMediaEnricher golemQuoteMediaEnricher(ObjectProvider<ChatLogService> chatLog) {
+        return new GolemQuoteMediaEnricher(chatLog.getIfAvailable());
     }
 
     @Bean

@@ -225,6 +225,25 @@ public class ChatLogServiceImpl implements ChatLogService {
         return rows == null ? List.of() : rows;
     }
 
+    @Override
+    public List<ChatMessage> listInboundBySvrid(String accountId, String sessionId, String svrid) {
+        String id = emptyToNull(svrid);
+        if (id == null || sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        LambdaQueryWrapper<ChatMessage> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(ChatMessage::getAccountId, blankTo(accountId, "default"));
+        wrapper.eq(ChatMessage::getSessionId, sessionId.trim());
+        wrapper.eq(ChatMessage::getDirection, DIRECTION_INBOUND);
+        wrapper.and(w -> w.eq(ChatMessage::getMessageId, id)
+                .or()
+                .likeRight(ChatMessage::getMessageId, id + ":"));
+        wrapper.orderByDesc(ChatMessage::getId);
+        wrapper.last("LIMIT 5");
+        List<ChatMessage> rows = mapper.selectList(wrapper);
+        return rows == null ? List.of() : rows;
+    }
+
     private void insertQuietly(ChatMessage row) {
         try {
             mapper.insert(row);
