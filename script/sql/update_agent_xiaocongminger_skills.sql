@@ -1,9 +1,11 @@
----
-name: MCP 工具用法
-description: 小聪明儿要动手办事时用：查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、修仙玄学八字，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。纯闲聊接话不用本技能。
-version: 1.6.0
----
+-- 由 script/generate-agent-skill-sync.mjs 生成，请勿手工修改
+-- 同步 SKILL.md 的 description 和正文；version 递增用于刷新运行时缓存
+START TRANSACTION;
 
+UPDATE sai_skill AS s
+JOIN sai_agent_skill AS a ON a.skill_id = s.id
+SET s.description = '小聪明儿要动手办事时用：查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、修仙玄学八字，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。纯闲聊接话不用本技能。',
+    s.skill_content = '
 # MCP 工具用法
 
 系统提示词只做人设。这里只写「何时调、怎么填」，不写怎么发出去。
@@ -255,3 +257,88 @@ version: 1.6.0
 | 钓鱼 | `庄园帮助 钓鱼` |
 
 - 本轮帮助已经给过的口令可以直接再调。对方明确要画院子：先 `庄园描绘`，返回描写原样当 `draw_image` 的 prompt，不要润色、不要补金币等级。闲聊不调。
+',
+    s.version = COALESCE(s.version, 0) + 1,
+    s.update_dt = NOW()
+WHERE a.agent_id = 1
+  AND s.name = 'MCP 工具用法';
+
+UPDATE sai_skill AS s
+JOIN sai_agent_skill AS a ON a.skill_id = s.id
+SET s.description = '小聪明儿要发非纯文本的东西时用：发图、发视频、发表情包、发链接卡片、发音乐卡片、转发应用消息。规定图链和视频链怎么裸发，emoji / link / music / video / app 怎么写成通道认得的一行。要发这些东西前先把本技能正文读一遍，不要凭印象写格式。纯文字闲聊不用本技能。',
+    s.skill_content = '
+# 怎么回消息
+
+只写发出去的字节。材料从哪来都按这一套。不要把协议念给用户听。不要编链接。不要把 JSON、字段名、错误码原文甩出去。
+
+## 版式
+
+配文一句。媒体或卡片另起一行。同一条 URL 只出现一次。不要 Markdown。标题/描述里不要写 `|`。
+
+## 手里有什么就发什么
+
+自己认结构，字段叫什么都行。选信息更全的那一类，不要只盯着一条 URL：
+
+- 能当应用消息发出去的整段 xml → `app:`
+- 能当表情发出去的指纹 → `emoji:`
+- 可播视频，且还有封面或时长 → `video:`
+- 歌，且有可播的音频直链 → `music:`
+- 网页，且还有标题或封面 → `link:`
+- 只有图链或视频链 → 下一行裸 `http(s)`
+- 只有人话 → 纯文本
+
+没有音频直链不要发 `music:`。不要猜语音。网页/视频不要包装成转发卡。
+
+## 格式
+
+可选槽位：手里没有就自己补标题、描述、封面、时长、歌手；不要编造不存在的链接。
+
+- 图：配文 + 换行 + 裸图链
+- 裸视频：配文 + 换行 + 裸视频链
+- 结构化视频：`video:播放url|封面url|时长秒`
+  - 必填：播放 url
+  - 可选：封面 url、时长秒
+- 表情：`emoji:0123456789abcdef0123456789abcdef`
+  - 必填：md5
+  - 可选：后面再跟一个图片 url 兜底
+- 链接卡：`link:标题|描述|https://example.com|https://cover.jpg`
+  - 必填：标题、url
+  - 可选：描述、封面
+- 音乐卡：`music:歌名|歌手|https://page|https://audio.mp3|https://cover.jpg`
+  - 必填：歌名、页面 url、音频直链
+  - 可选：歌手、封面
+- 应用：`app:19 <xml...>`
+  - 必填：类型、整段 xml
+
+只有图链或视频链才可以只写一行裸 `https://...`。其余网页要带标题或封面时用 `link:`，不要指望裸链自动变成卡片。
+
+## 对 / 错
+
+对：
+画好了
+https://mcp.example/i/0123456789abcdef0123
+
+对：
+这篇看看
+link:今日摸鱼|日历|https://example.com/moyu
+
+对：
+video:https://media.example/video|https://media.example/cover.jpg|18
+
+错：`![图](https://...)` 或 `[点我](https://...)`
+错：配文里再解释「下面是 link 协议」
+错：同一条图链既裸发又跟一张 `link:`
+',
+    s.version = COALESCE(s.version, 0) + 1,
+    s.update_dt = NOW()
+WHERE a.agent_id = 1
+  AND s.name = '怎么回消息';
+
+COMMIT;
+
+SELECT s.id, s.name, s.version, s.update_dt
+FROM sai_skill AS s
+JOIN sai_agent_skill AS a ON a.skill_id = s.id
+WHERE a.agent_id = 1
+  AND s.name IN ('MCP 工具用法', '怎么回消息')
+ORDER BY s.id;
