@@ -17,6 +17,10 @@
         </dependency>
         <dependency>
             <groupId>me.liwncy</groupId>
+            <artifactId>one-common-mcp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.liwncy</groupId>
             <artifactId>one-common-web</artifactId>
         </dependency>
         <dependency>

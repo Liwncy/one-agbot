@@ -170,6 +170,17 @@ public class GolemApiClient {
     }
 
     /**
+     * POST /api/contacts/search。业务码（用户不存在等）由调用方判断，不在这里抛。
+     */
+    public JsonNode searchContacts(String keyword, int fromScene, int searchScene) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("keyword", keyword == null ? "" : keyword);
+        body.put("from_scene", fromScene);
+        body.put("search_scene", searchScene);
+        return postJson("/api/contacts/search", body);
+    }
+
+    /**
      * GET /api/cdn/download/image?id=&amp;key= → 原始二进制。
      */
     public byte[] cdnDownloadImage(String id, String key) {

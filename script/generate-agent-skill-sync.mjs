@@ -7,6 +7,7 @@ const agentId = 1;
 const skillPaths = [
   "skills/mcp-tools/SKILL.md",
   "skills/outbound-reply/SKILL.md",
+  "skills/wechat-play/SKILL.md",
 ];
 
 function parseSkill(relativePath) {
@@ -38,19 +39,34 @@ function sqlString(value) {
 }
 
 const skills = skillPaths.map(parseSkill);
-const statements = skills.map(
-  (skill) => `UPDATE sai_skill AS s
-JOIN sai_agent_skill AS a ON a.skill_id = s.id
-SET s.description = ${sqlString(skill.description)},
-    s.skill_content = ${sqlString(skill.content)},
-    s.version = COALESCE(s.version, 0) + 1,
-    s.update_dt = NOW()
-WHERE a.agent_id = ${agentId}
-  AND s.name = ${sqlString(skill.name)};`,
-);
+const statements = skills.flatMap((skill) => {
+  const name = sqlString(skill.name);
+  const description = sqlString(skill.description);
+  const content = sqlString(skill.content);
+  return [
+    `INSERT INTO sai_skill (name, description, skill_content, version, has_files, create_dt, update_dt)
+SELECT ${name}, ${description}, ${content}, 0, 0, NOW(), NOW()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM sai_skill WHERE name = ${name});`,
+    `UPDATE sai_skill
+SET description = ${description},
+    skill_content = ${content},
+    version = COALESCE(version, 0) + 1,
+    update_dt = NOW()
+WHERE name = ${name};`,
+    `INSERT INTO sai_agent_skill (agent_id, skill_id)
+SELECT ${agentId}, s.id
+FROM sai_skill AS s
+WHERE s.name = ${name}
+  AND NOT EXISTS (
+    SELECT 1 FROM sai_agent_skill AS a
+    WHERE a.agent_id = ${agentId} AND a.skill_id = s.id
+  );`,
+  ];
+});
 const names = skills.map((skill) => sqlString(skill.name)).join(", ");
 const sql = `-- 由 script/generate-agent-skill-sync.mjs 生成，请勿手工修改
--- 同步 SKILL.md 的 description 和正文；version 递增用于刷新运行时缓存
+-- 同步 SKILL.md 的 description 和正文；不存在则插入并绑到智能体；version 递增刷新缓存
 START TRANSACTION;
 
 ${statements.join("\n\n")}

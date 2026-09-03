@@ -3,6 +3,7 @@ package me.liwncy.agbot.adapter.golem;
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
+import me.liwncy.agbot.adapter.golem.mcp.GolemRandomFriendMcpTool;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupRespondPolicy;
@@ -82,6 +83,12 @@ public class GolemConfiguration {
         }
         Path storeFile = Path.of(properties.getSessionActiveStorePath()).toAbsolutePath().normalize();
         return new FileGolemSessionActivation(storeFile);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "spring.ai.mcp.server", name = "enabled", havingValue = "true")
+    public GolemRandomFriendMcpTool golemRandomFriendMcpTool(GolemApiClient apiClient, GolemProperties properties) {
+        return new GolemRandomFriendMcpTool(apiClient, properties);
     }
 
     @Bean

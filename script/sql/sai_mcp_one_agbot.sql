@@ -11,7 +11,7 @@ INSERT INTO sai_mcp_server (
 )
 SELECT
     'one-agbot',
-    '框架通道能力：聊天记录等（agbot_chat_history / agbot_chat_get）',
+    '框架通道能力：聊天记录、随机朋友等（agbot_chat_history / agbot_chat_get / golem_random_friend）',
     2,
     'http://boot:8088',
     '/mcp',
@@ -20,6 +20,10 @@ FROM DUAL
 WHERE NOT EXISTS (
     SELECT 1 FROM sai_mcp_server WHERE name = 'one-agbot'
 );
+
+UPDATE sai_mcp_server
+SET description = '框架通道能力：聊天记录、随机朋友等（agbot_chat_history / agbot_chat_get / golem_random_friend）'
+WHERE name = 'one-agbot';
 
 INSERT INTO sai_agent_mcp_server (agent_id, mcp_server_id)
 SELECT 1, s.id
