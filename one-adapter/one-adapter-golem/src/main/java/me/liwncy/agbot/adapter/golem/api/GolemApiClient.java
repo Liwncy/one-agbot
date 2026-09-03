@@ -7,6 +7,7 @@ import me.liwncy.agbot.common.json.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -261,6 +262,10 @@ public class GolemApiClient {
         assertOk(root, "revoke");
     }
 
+    /**
+     * 对齐 xchatbot {@code parseJsonResponse}：HTTP 4xx 仍解析 JSON 业务码，
+     * 由调用方判断 code（搜号「用户不存在」要换号，不能在这里抛）。
+     */
     private JsonNode postJson(String path, Object body) {
         try {
             String json = restClient.post()
@@ -268,8 +273,9 @@ public class GolemApiClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(JsonUtils.toJson(body))
                     .retrieve()
+                    .onStatus(HttpStatusCode::isError, (request, response) -> { })
                     .body(String.class);
-            return JsonUtils.mapper().readTree(json == null ? "{}" : json);
+            return readJson(json);
         } catch (ServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -285,13 +291,22 @@ public class GolemApiClient {
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(form)
                     .retrieve()
+                    .onStatus(HttpStatusCode::isError, (request, response) -> { })
                     .body(String.class);
-            return JsonUtils.mapper().readTree(json == null ? "{}" : json);
+            return readJson(json);
         } catch (ServiceException e) {
             throw e;
         } catch (Exception e) {
             log.error("Golem API form call failed path={}", path, e);
             throw new ServiceException("Golem API failed: " + e.getMessage());
+        }
+    }
+
+    private static JsonNode readJson(String json) {
+        try {
+            return JsonUtils.mapper().readTree(json == null || json.isBlank() ? "{}" : json);
+        } catch (Exception e) {
+            throw new ServiceException("Golem API returned non-JSON: " + e.getMessage());
         }
     }
 
