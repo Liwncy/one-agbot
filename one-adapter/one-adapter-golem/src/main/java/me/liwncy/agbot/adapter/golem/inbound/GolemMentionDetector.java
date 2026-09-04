@@ -16,6 +16,9 @@ public final class GolemMentionDetector {
     private static final Pattern AT_USER_LIST = Pattern.compile(
             "<atuserlist(?:\\s[^>]*)?>([\\s\\S]*?)</atuserlist>",
             Pattern.CASE_INSENSITIVE);
+    /** 微信点名：@群昵称 后跟 U+2005 等空白 */
+    private static final Pattern AT_DISPLAY = Pattern.compile(
+            "[@＠]([^@＠\\u2004\\u2005\\u2006\\u2009\\u200A\\u200B\\uFEFF\\s]+)");
     /** 微信 @ 后常见的窄空格等 */
     private static final Pattern WECHAT_NOISE = Pattern.compile("[\\u2005\\u2006\\u2009\\u200A\\u200B\\uFEFF\\u00A0]+");
 
@@ -114,6 +117,28 @@ public final class GolemMentionDetector {
             }
         }
         return ids.isEmpty() ? List.of() : List.copyOf(new ArrayList<>(ids));
+    }
+
+    /**
+     * 从正文抽出 @ 后面的展示名（保序）。对应微信点名插入的 {@code @昵称 + U+2005}。
+     */
+    public static List<String> extractAtDisplayNames(String content) {
+        if (content == null || content.isBlank()) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        Matcher matcher = AT_DISPLAY.matcher(content);
+        while (matcher.find()) {
+            String name = matcher.group(1) == null ? "" : matcher.group(1).trim();
+            if (name.isEmpty() || name.length() > 30) {
+                continue;
+            }
+            if ("所有人".equals(name) || "all".equalsIgnoreCase(name) || "notify@all".equalsIgnoreCase(name)) {
+                continue;
+            }
+            names.add(name);
+        }
+        return names.isEmpty() ? List.of() : List.copyOf(names);
     }
 
     /**

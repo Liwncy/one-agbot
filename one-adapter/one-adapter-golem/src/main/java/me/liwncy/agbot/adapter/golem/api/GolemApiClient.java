@@ -18,8 +18,10 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -182,6 +184,29 @@ public class GolemApiClient {
     }
 
     /**
+     * POST /api/contacts/detail。body 为 wxid / 群 id 数组。业务码由调用方判断。
+     */
+    public JsonNode getContactDetail(List<String> usernames) {
+        List<String> ids = new ArrayList<>();
+        if (usernames != null) {
+            for (String username : usernames) {
+                if (username != null && !username.isBlank()) {
+                    ids.add(username.trim());
+                }
+            }
+        }
+        return postJson("/api/contacts/detail", ids);
+    }
+
+    /**
+     * GET /api/chatroom/members/{chatroom}。群成员含头像时作 contact/detail 的兜底。
+     */
+    public JsonNode getChatroomMembers(String chatroom) {
+        String room = chatroom == null ? "" : chatroom.trim();
+        return getJson("/api/chatroom/members/{chatroom}", room);
+    }
+
+    /**
      * GET /api/cdn/download/image?id=&amp;key= → 原始二进制。
      */
     public byte[] cdnDownloadImage(String id, String key) {
@@ -280,6 +305,22 @@ public class GolemApiClient {
             throw e;
         } catch (Exception e) {
             log.error("Golem API call failed path={}", path, e);
+            throw new ServiceException("Golem API failed: " + e.getMessage());
+        }
+    }
+
+    private JsonNode getJson(String path, Object... uriVars) {
+        try {
+            String json = restClient.get()
+                    .uri(path, uriVars)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, (request, response) -> { })
+                    .body(String.class);
+            return readJson(json);
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Golem API get failed path={}", path, e);
             throw new ServiceException("Golem API failed: " + e.getMessage());
         }
     }

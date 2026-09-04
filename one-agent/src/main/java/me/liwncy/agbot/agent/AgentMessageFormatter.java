@@ -6,6 +6,9 @@ import me.liwncy.agbot.kernel.api.message.MediaRef;
 import me.liwncy.agbot.kernel.api.message.MsgInfo;
 import me.liwncy.agbot.kernel.api.message.MsgType;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -41,6 +44,7 @@ final class AgentMessageFormatter {
             default -> firstNonBlank(msgInfo.msg(), "[" + type + "]");
         };
         String text = withSpeaker(msgInfo, appendQuote(content, extra, msgInfo));
+        text = appendMentions(text, extra);
         // 引用图/表情/视频封面：顶层仍是 TEXT，附件按引用类型上传
         String agentType = resolveAgentMediaType(type, media, extra);
         return new AgentUserInput(agentType, text, media);
@@ -96,6 +100,63 @@ final class AgentMessageFormatter {
             return "[" + prefix + "]";
         }
         return "[" + prefix + "] " + text;
+    }
+
+    /**
+     * 群 @ 的人：wxid / 展示名 / 头像。给编聊天记录卡用，不把这行念给用户。
+     */
+    static String appendMentions(String body, Map<String, Object> extra) {
+        String text = blankToEmpty(body);
+        List<Map<String, Object>> mentions = mentionRows(extra == null ? null : extra.get(ChannelExtraKeys.MENTIONS));
+        if (mentions.isEmpty()) {
+            return text;
+        }
+        StringBuilder sb = new StringBuilder(text);
+        int fallbackSeq = 1;
+        for (Map<String, Object> row : mentions) {
+            String id = stringExtra(row, "id");
+            String name = stringExtra(row, "name");
+            String avatar = stringExtra(row, "avatar");
+            if (id.isBlank() && name.isBlank()) {
+                continue;
+            }
+            String seq = stringExtra(row, "seq");
+            if (seq.isBlank()) {
+                seq = String.valueOf(fallbackSeq);
+            }
+            fallbackSeq++;
+            String who = name.isBlank() || name.equals(id)
+                    ? firstNonBlank(id, name)
+                    : id + "/" + name;
+            sb.append("\n[被@ ").append(seq).append(' ').append(who);
+            if (!avatar.isBlank()) {
+                sb.append(" avatar=").append(avatar);
+            }
+            sb.append(']');
+        }
+        return sb.toString();
+    }
+
+    private static List<Map<String, Object>> mentionRows(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (entry.getKey() != null) {
+                    row.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+            }
+            if (!row.isEmpty()) {
+                rows.add(row);
+            }
+        }
+        return rows;
     }
 
     private static boolean isOwner(Map<String, Object> extra) {

@@ -2,7 +2,9 @@ package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
+import me.liwncy.agbot.adapter.golem.inbound.GolemMentionEnricher;
 import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
+import me.liwncy.agbot.adapter.golem.mcp.GolemFakeForwardMcpTool;
 import me.liwncy.agbot.adapter.golem.mcp.GolemRandomFriendMcpTool;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.adapter.golem.session.FileGolemGroupGate;
@@ -68,6 +70,12 @@ public class GolemConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(GolemMentionEnricher.class)
+    public GolemMentionEnricher golemMentionEnricher(GolemApiClient apiClient) {
+        return new GolemMentionEnricher(apiClient);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(GolemQuoteMediaEnricher.class)
     public GolemQuoteMediaEnricher golemQuoteMediaEnricher(ObjectProvider<ChatLogService> chatLog) {
         return new GolemQuoteMediaEnricher(chatLog.getIfAvailable());
@@ -89,6 +97,12 @@ public class GolemConfiguration {
     @ConditionalOnProperty(prefix = "spring.ai.mcp.server", name = "enabled", havingValue = "true")
     public GolemRandomFriendMcpTool golemRandomFriendMcpTool(GolemApiClient apiClient, GolemProperties properties) {
         return new GolemRandomFriendMcpTool(apiClient, properties);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "spring.ai.mcp.server", name = "enabled", havingValue = "true")
+    public GolemFakeForwardMcpTool golemFakeForwardMcpTool() {
+        return new GolemFakeForwardMcpTool();
     }
 
     @Bean

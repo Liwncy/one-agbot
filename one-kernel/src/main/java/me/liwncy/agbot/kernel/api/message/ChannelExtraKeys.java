@@ -6,6 +6,8 @@ package me.liwncy.agbot.kernel.api.message;
 public final class ChannelExtraKeys {
     public static final String PARSE_MODE = "parseMode";
     public static final String MENTION_IDS = "mentionIds";
+    /** 入站被 @ 的人：[{seq, id, name, avatar}]，seq 从 1 起，avatar 可能为空 */
+    public static final String MENTIONS = "mentions";
     public static final String QUOTE_CONTENT = "quoteContent";
     public static final String QUOTE_MSG_TYPE = "quoteMsgType";
     /** 被引用消息的发送者 wxid（refermsg chatusr/fromusr） */

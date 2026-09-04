@@ -1,13 +1,11 @@
 package me.liwncy.agbot.agent;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import me.liwncy.agbot.common.json.JsonUtils;
 import me.liwncy.agbot.kernel.api.message.ChannelExtraKeys;
 import me.liwncy.agbot.kernel.api.message.MediaRef;
+import me.liwncy.agbot.kernel.chatlog.ChatLogView;
 import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -55,10 +53,10 @@ final class AgentRecentContext {
         if (row == null) {
             return null;
         }
-        Map<String, Object> extra = parseExtra(row.getAdapterExtra());
+        Map<String, Object> extra = ChatLogView.extra(row);
         String path = firstNonBlank(
                 string(extra.get(ChannelExtraKeys.MEDIA_URL)),
-                looksLikeLocalFile(row.getContentText()) ? row.getContentText() : "");
+                ChatLogView.looksLikeLocalFile(row.getContentText()) ? row.getContentText() : "");
         return MediaRef.from(path, extra);
     }
 
@@ -68,46 +66,14 @@ final class AgentRecentContext {
         }
         String speaker = speaker(row.getSenderId(), row.getSenderName());
         String type = row.getMsgType() == null ? "" : row.getMsgType().trim();
-        String text = clip(row.getContentText());
-        if (looksLikeLocalFile(text)) {
-            text = "";
-        }
-        if (text.isBlank()) {
-            text = type.isBlank() ? "[消息]" : "[" + type + "]";
-        } else if (!type.isBlank() && !"text".equalsIgnoreCase(type) && !text.startsWith("[")) {
+        String text = ChatLogView.body(row, LINE_CLIP);
+        if (!type.isBlank() && !"text".equalsIgnoreCase(type) && !text.startsWith("[")) {
             text = "[" + type + "] " + text;
         }
         if (attachedOrdinal != null && attachedOrdinal > 0) {
             text = text + " （附图" + attachedOrdinal + "）";
         }
         return speaker + ": " + text;
-    }
-
-    static boolean looksLikeLocalFile(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        String text = value.trim();
-        String lower = text.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("http://") || lower.startsWith("https://")) {
-            return false;
-        }
-        return lower.startsWith("file:")
-                || text.contains("\\")
-                || text.startsWith("/");
-    }
-
-    private static Map<String, Object> parseExtra(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            Map<String, Object> extra = JsonUtils.fromJson(json, new TypeReference<>() {
-            });
-            return extra == null ? Map.of() : extra;
-        } catch (Exception ignored) {
-            return Map.of();
-        }
     }
 
     private static String speaker(String senderId, String senderName) {
@@ -120,14 +86,6 @@ final class AgentRecentContext {
             return name;
         }
         return id + "/" + name;
-    }
-
-    private static String clip(String raw) {
-        String text = raw == null ? "" : raw.replace('\n', ' ').trim();
-        if (text.length() <= LINE_CLIP) {
-            return text;
-        }
-        return text.substring(0, LINE_CLIP) + "...";
     }
 
     private static String string(Object value) {

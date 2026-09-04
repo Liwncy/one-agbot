@@ -58,7 +58,8 @@
 | 键 | 用途 |
 |----|------|
 | `parseMode` | `markdown` / `html` |
-| `mentionIds` | 入站被 @ 的用户列表 |
+| `mentionIds` | 入站被 @ 的 wxid 列表 |
+| `mentions` | 入站被 @ 的人 `[{seq, id, name, avatar}]`，seq 从 1 起 |
 | `quoteContent` / `quoteMsgType` | 引用原文与原类型 |
 | `thumb` / `duration` / `md5` / `format` | 媒体附属 |
 | `mediaForm` / `mediaUrl` / `mediaBase64` / `mediaPlatformId` / `mediaMime` / `mediaSize` | 媒体传输 |

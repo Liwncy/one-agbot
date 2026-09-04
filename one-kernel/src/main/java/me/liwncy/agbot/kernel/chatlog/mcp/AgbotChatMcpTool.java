@@ -4,6 +4,7 @@ import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.chatlog.ChatLogQuery;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.kernel.chatlog.ChatLogTime;
+import me.liwncy.agbot.kernel.chatlog.ChatLogView;
 import me.liwncy.agbot.kernel.chatlog.domain.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,7 @@ public class AgbotChatMcpTool {
             name = "agbot_chat_history",
             description = "查询当前会话通道聊天记录（微信群/私聊原文，含未回复的）。"
                     + "认人、对「他/刚才谁说」、按某天/时间段翻记录时用。"
+                    + "表情/图片行会带 md5= 和可用 url=，收藏表情用这个，不要只看占位文案。"
                     + "scope 必须从本条消息前缀原样复制（group:… 或 user:…），不要猜、不要改 @chatroom。"
                     + "查某天用 date（2026-08-29 / 8-29 / 29号，可带 14:30:05）。总结某天必须带 date，limit 默认 200。"
                     + "按时间点用 from/until，精确到秒。满页用 afterId 继续拿更晚的，再一起总结；不要说只有 50 条。"
@@ -248,7 +250,7 @@ public class AgbotChatMcpTool {
         String speaker = speaker(row.getSenderId(), row.getSenderName());
         String dir = row.getDirection() == null ? "?" : row.getDirection();
         String type = row.getMsgType() == null ? "text" : row.getMsgType();
-        String body = clip(row.getContentText(), LINE_CLIP);
+        String body = ChatLogView.body(row, LINE_CLIP);
         StringBuilder line = new StringBuilder();
         line.append('[').append(time).append("] ")
                 .append(dir).append(' ')
@@ -271,14 +273,6 @@ public class AgbotChatMcpTool {
             return name;
         }
         return id + "/" + name;
-    }
-
-    private static String clip(String text, int max) {
-        String body = text == null ? "" : text.replace('\n', ' ').trim();
-        if (body.length() <= max) {
-            return body;
-        }
-        return body.substring(0, max) + "...";
     }
 
     private static String blankTo(String value, String fallback) {

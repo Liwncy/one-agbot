@@ -1,6 +1,7 @@
 package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
+import me.liwncy.agbot.adapter.golem.inbound.GolemMentionEnricher;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMessageParser;
 import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
 import me.liwncy.agbot.adapter.golem.inbound.GolemSignatureVerifier;
@@ -57,6 +58,7 @@ public class GolemWebhookController {
     private final GolemOwnerCommandHandler ownerCommandHandler;
     private final GolemMediaResolver mediaResolver;
     private final GolemQuoteMediaEnricher quoteMediaEnricher;
+    private final GolemMentionEnricher mentionEnricher;
     private final ChatLogService chatLog;
     private final ConversationTurnGuard turnGuard;
 
@@ -72,6 +74,7 @@ public class GolemWebhookController {
                                   GolemOwnerCommandHandler ownerCommandHandler,
                                   GolemMediaResolver mediaResolver,
                                   GolemQuoteMediaEnricher quoteMediaEnricher,
+                                  GolemMentionEnricher mentionEnricher,
                                   ObjectProvider<ChatLogService> chatLog,
                                   ConversationTurnGuard turnGuard) {
         this.runtime = runtime;
@@ -86,6 +89,7 @@ public class GolemWebhookController {
         this.ownerCommandHandler = ownerCommandHandler;
         this.mediaResolver = mediaResolver;
         this.quoteMediaEnricher = quoteMediaEnricher;
+        this.mentionEnricher = mentionEnricher;
         this.chatLog = chatLog.getIfAvailable();
         this.turnGuard = turnGuard;
     }
@@ -121,7 +125,7 @@ public class GolemWebhookController {
         int roleplayCommands = 0;
         int ownerCommands = 0;
         for (MsgInfo raw : messages) {
-            MsgInfo msg = mediaResolver.resolve(quoteMediaEnricher.enrich(raw));
+            MsgInfo msg = mediaResolver.resolve(quoteMediaEnricher.enrich(mentionEnricher.enrich(raw)));
             if (!botId.isEmpty() && botId.equals(msg.userId())) {
                 continue;
             }
