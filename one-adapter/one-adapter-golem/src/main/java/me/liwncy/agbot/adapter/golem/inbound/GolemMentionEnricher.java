@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 把群 @ 的 wxid 配上正文里的展示名，并查通讯录补头像。
+ * 群 @ 用 {@code POST /api/contacts/detail} 补 wxid 对应的昵称和头像。
  */
 public class GolemMentionEnricher {
     private static final Logger log = LoggerFactory.getLogger(GolemMentionEnricher.class);
@@ -40,7 +40,7 @@ public class GolemMentionEnricher {
             return msg;
         }
         List<String> names = GolemMentionDetector.extractAtDisplayNames(msg.msg());
-        Map<String, Profile> profiles = resolveProfiles(ids, msg.groupId());
+        Map<String, Profile> profiles = resolveProfiles(ids);
         List<Map<String, String>> mentions = new ArrayList<>();
         int nameIdx = 0;
         int withAvatar = 0;
@@ -82,7 +82,7 @@ public class GolemMentionEnricher {
         );
     }
 
-    private Map<String, Profile> resolveProfiles(List<String> ids, String groupId) {
+    private Map<String, Profile> resolveProfiles(List<String> ids) {
         Map<String, Profile> out = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
         long now = System.currentTimeMillis();
@@ -96,18 +96,8 @@ public class GolemMentionEnricher {
         }
         if (!missing.isEmpty()) {
             Map<String, Profile> fetched = fetchProfiles(missing);
-            mergeProfiles(out, fetched);
+            out.putAll(fetched);
             remember(fetched);
-        }
-        if (needsAvatar(ids, out) && groupId != null && groupId.endsWith("@chatroom")) {
-            Map<String, Profile> room = fetchProfiles(List.of(groupId));
-            mergeProfiles(out, room);
-            remember(room);
-            if (needsAvatar(ids, out)) {
-                Map<String, Profile> members = fetchChatroomMembers(groupId);
-                mergeProfiles(out, members);
-                remember(members);
-            }
         }
         rememberRequested(ids, out);
         return out;
@@ -116,10 +106,10 @@ public class GolemMentionEnricher {
     private void remember(Map<String, Profile> profiles) {
         long now = System.currentTimeMillis();
         for (Map.Entry<String, Profile> entry : profiles.entrySet()) {
-            Profile profile = entry.getValue();
             if (entry.getKey() == null || entry.getKey().isBlank()) {
                 continue;
             }
+            Profile profile = entry.getValue();
             cache.put(entry.getKey(), new CachedProfile(
                     profile, now + (profile.avatar().isBlank() ? MISS_TTL_MS : HIT_TTL_MS)));
         }
@@ -135,108 +125,57 @@ public class GolemMentionEnricher {
         }
     }
 
-    private boolean needsAvatar(List<String> ids, Map<String, Profile> profiles) {
-        for (String id : ids) {
-            Profile profile = profiles.get(id.toLowerCase(Locale.ROOT));
-            if (profile == null || profile.avatar().isBlank()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private Map<String, Profile> fetchProfiles(List<String> usernames) {
         try {
             JsonNode root = apiClient.getContactDetail(usernames);
-            return parseProfiles(root);
+            Map<String, Profile> parsed = parseContactList(root);
+            log.info("Golem contact detail ids={} code={} parsed={} avatars={}",
+                    usernames, root.path("code").asInt(0), parsed.size(), countAvatars(parsed));
+            return parsed;
         } catch (Exception e) {
             log.warn("Golem contact detail failed ids={}: {}", usernames, e.toString());
             return Map.of();
         }
     }
 
-    private Map<String, Profile> fetchChatroomMembers(String groupId) {
-        try {
-            JsonNode root = apiClient.getChatroomMembers(groupId);
-            return parseProfiles(root);
-        } catch (Exception e) {
-            log.warn("Golem chatroom members failed groupId={}: {}", groupId, e.toString());
-            return Map.of();
+    private static int countAvatars(Map<String, Profile> profiles) {
+        int n = 0;
+        for (Profile profile : profiles.values()) {
+            if (profile != null && !profile.avatar().isBlank()) {
+                n++;
+            }
         }
+        return n;
     }
 
-    private static Map<String, Profile> parseProfiles(JsonNode root) {
+    /** 只认 {@code data.contact_list[]}：username/nickname 为 {value}，头像为字符串 URL。 */
+    static Map<String, Profile> parseContactList(JsonNode root) {
         Map<String, Profile> out = new LinkedHashMap<>();
         if (root == null || root.isNull() || root.isMissingNode()) {
             return out;
         }
         JsonNode data = root.has("data") && !root.get("data").isNull() ? root.get("data") : root;
-        collectNode(data, out);
+        JsonNode list = data.path("contact_list");
+        if (!list.isArray()) {
+            return out;
+        }
+        for (JsonNode item : list) {
+            Profile profile = readProfile(item);
+            if (!profile.id().isBlank()) {
+                out.put(profile.id().toLowerCase(Locale.ROOT), profile);
+            }
+        }
         return out;
     }
 
-    private static void collectNode(JsonNode node, Map<String, Profile> out) {
-        if (node == null || node.isNull() || node.isMissingNode()) {
-            return;
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                collectNode(child, out);
-            }
-            return;
-        }
-        if (!node.isObject()) {
-            return;
-        }
-        Profile self = readProfile(node);
-        if (!self.id().isBlank()) {
-            out.put(self.id().toLowerCase(Locale.ROOT), self);
-        }
-        collectNode(node.get("contact_list"), out);
-        collectNode(node.get("list"), out);
-        JsonNode members = node.get("members");
-        if (members != null && members.isObject()) {
-            collectNode(members.get("list"), out);
-        }
-        collectNode(node.get("result"), out);
-    }
-
     private static Profile readProfile(JsonNode node) {
-        String id = firstNonBlank(
-                unwrap(node, "username"),
-                unwrap(node, "user_name"),
-                unwrap(node, "wxid"),
-                unwrap(node, "id"),
-                unwrap(node, "userName"));
-        String name = firstNonBlank(
-                unwrap(node, "display_name"),
-                unwrap(node, "nickname"),
-                unwrap(node, "nick_name"));
-        String avatar = firstNonBlank(
-                unwrap(node, "big_avatar_url"),
-                unwrap(node, "small_avatar_url"),
-                unwrap(node, "avatar_url"),
-                unwrap(node, "head_img_url"),
-                unwrap(node, "headimgurl"),
-                unwrap(node, "big_head_img_url"),
-                unwrap(node, "small_head_img_url"));
+        String id = unwrap(node, "username");
+        String name = firstNonBlank(unwrap(node, "nickname"), unwrap(node, "display_name"));
+        String avatar = firstNonBlank(unwrap(node, "big_avatar_url"), unwrap(node, "small_avatar_url"));
         if (!looksLikeHttp(avatar)) {
             avatar = "";
         }
         return new Profile(id, name, avatar);
-    }
-
-    private static void mergeProfiles(Map<String, Profile> target, Map<String, Profile> extra) {
-        for (Map.Entry<String, Profile> entry : extra.entrySet()) {
-            Profile incoming = entry.getValue();
-            Profile current = target.get(entry.getKey());
-            if (current == null || current.avatar().isBlank()) {
-                target.put(entry.getKey(), incoming);
-            } else if (current.name().isBlank() && !incoming.name().isBlank()) {
-                target.put(entry.getKey(), new Profile(current.id().isBlank() ? incoming.id() : current.id(),
-                        incoming.name(), current.avatar()));
-            }
-        }
     }
 
     static List<String> mentionIds(Object raw) {
@@ -306,7 +245,7 @@ public class GolemMentionEnricher {
         return "";
     }
 
-    private record Profile(String id, String name, String avatar) {
+    record Profile(String id, String name, String avatar) {
         static final Profile EMPTY = new Profile("", "", "");
 
         Profile {
