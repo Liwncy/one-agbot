@@ -7,7 +7,6 @@ import me.liwncy.agbot.common.json.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
@@ -200,6 +199,13 @@ public class GolemApiClient {
     }
 
     /**
+     * GET /api/chatroom/members/{chatroom} → 整份群成员，不支持按成员筛选。
+     */
+    public JsonNode getChatroomMembers(String chatroom) {
+        return getJson("/api/chatroom/members/{chatroom}", chatroom == null ? "" : chatroom.trim());
+    }
+
+    /**
      * GET /api/cdn/download/image?id=&amp;key= → 原始二进制。
      */
     public byte[] cdnDownloadImage(String id, String key) {
@@ -280,10 +286,14 @@ public class GolemApiClient {
         assertOk(root, "revoke");
     }
 
-    private JsonNode exchangeJson(HttpMethod method, String path, Object body, Object... uriVars) {
+    /**
+     * 对齐 xchatbot {@code parseJsonResponse}：HTTP 4xx 仍解析 JSON 业务码，
+     * 由调用方判断 code（搜号「用户不存在」要换号，不能在这里抛）。
+     */
+    private JsonNode postJson(String path, Object body) {
         try {
-            String json = restClient.method(method)
-                    .uri(path, uriVars)
+            String json = restClient.post()
+                    .uri(path)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(JsonUtils.toJson(body == null ? List.of() : body))
                     .retrieve()
@@ -293,17 +303,25 @@ public class GolemApiClient {
         } catch (ServiceException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Golem API {} failed path={}", method, path, e);
+            log.error("Golem API post failed path={}", path, e);
             throw new ServiceException("Golem API failed: " + e.getMessage());
         }
     }
 
-    /**
-     * 对齐 xchatbot {@code parseJsonResponse}：HTTP 4xx 仍解析 JSON 业务码，
-     * 由调用方判断 code（搜号「用户不存在」要换号，不能在这里抛）。
-     */
-    private JsonNode postJson(String path, Object body) {
-        return exchangeJson(HttpMethod.POST, path, body);
+    private JsonNode getJson(String path, Object... uriVars) {
+        try {
+            String json = restClient.get()
+                    .uri(path, uriVars)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, (request, response) -> { })
+                    .body(String.class);
+            return readJson(json);
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Golem API get failed path={}", path, e);
+            throw new ServiceException("Golem API failed: " + e.getMessage());
+        }
     }
 
     private JsonNode postForm(String path, MultiValueMap<String, Object> form) {

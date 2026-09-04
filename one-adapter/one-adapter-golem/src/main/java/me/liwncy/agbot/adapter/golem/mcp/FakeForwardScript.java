@@ -1,6 +1,5 @@
 package me.liwncy.agbot.adapter.golem.mcp;
 
-import java.net.URI;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,11 +8,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,18 +29,17 @@ final class FakeForwardScript {
     private FakeForwardScript() {
     }
 
-    record Line(String name, String content, String avatarUrl, long timestampMs) {
+    record Line(String name, String content, long timestampMs) {
     }
 
-    static List<Line> parse(String script, String avatarsRaw) {
-        return parse(script, avatarsRaw, LocalDateTime.now(TZ));
+    static List<Line> parse(String script) {
+        return parse(script, LocalDateTime.now(TZ));
     }
 
-    static List<Line> parse(String script, String avatarsRaw, LocalDateTime now) {
+    static List<Line> parse(String script, LocalDateTime now) {
         if (script == null || script.isBlank()) {
             throw new IllegalArgumentException("缺聊天内容。每行填 姓名|时间|内容，时间可空。");
         }
-        Map<String, String> avatars = parseAvatars(avatarsRaw);
         List<Line> lines = new ArrayList<>();
         Long lastTs = null;
         String[] rawLines = script.split("\\R");
@@ -61,7 +56,7 @@ final class FakeForwardScript {
                 ts = parseTime(row.timeText(), now.toLocalDate(), lastTs);
             }
             lastTs = ts;
-            lines.add(new Line(row.name(), row.content(), avatars.getOrDefault(row.name(), ""), ts));
+            lines.add(new Line(row.name(), row.content(), ts));
         }
         if (lines.isEmpty()) {
             throw new IllegalArgumentException("缺聊天内容。每行填 姓名|时间|内容，时间可空。");
@@ -135,27 +130,6 @@ final class FakeForwardScript {
         return m.group(1) + " " + pad2(Integer.parseInt(m.group(2))) + ":" + m.group(3);
     }
 
-    private static Map<String, String> parseAvatars(String raw) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (raw == null || raw.isBlank()) {
-            return map;
-        }
-        for (String piece : raw.split("[\\r\\n]+")) {
-            String item = piece.trim();
-            if (item.isEmpty()) {
-                continue;
-            }
-            int eq = item.indexOf('=');
-            if (eq < 1) {
-                throw new IllegalArgumentException("头像格式应为 姓名=https://... ，每行一个");
-            }
-            String name = normalizeName(item.substring(0, eq));
-            String url = normalizeAvatar(item.substring(eq + 1));
-            map.put(name, url);
-        }
-        return map;
-    }
-
     private static String normalizeName(String value) {
         String name = value == null ? "" : value.trim();
         if (name.isEmpty()) {
@@ -176,24 +150,6 @@ final class FakeForwardScript {
             throw new IllegalArgumentException("单条内容不能超过 " + MAX_CONTENT_LENGTH + " 个字");
         }
         return content;
-    }
-
-    private static String normalizeAvatar(String value) {
-        String url = value == null ? "" : value.trim();
-        if (url.isEmpty()) {
-            return "";
-        }
-        URI uri;
-        try {
-            uri = URI.create(url);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("头像 URL 格式无效");
-        }
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        if (!"http".equals(scheme) && !"https".equals(scheme)) {
-            throw new IllegalArgumentException("头像 URL 只支持 http/https");
-        }
-        return url;
     }
 
     private static long toEpochMs(LocalDateTime time) {

@@ -103,7 +103,7 @@ final class AgentMessageFormatter {
     }
 
     /**
-     * 群 @ 的人：wxid / 展示名 / 头像。给编聊天记录卡用，不把这行念给用户。
+     * 群 @ 的人：wxid 与群里显示的名字。给编聊天记录卡认人用，不把这行念给用户。
      */
     static String appendMentions(String body, Map<String, Object> extra) {
         String text = blankToEmpty(body);
@@ -116,7 +116,6 @@ final class AgentMessageFormatter {
         for (Map<String, Object> row : mentions) {
             String id = stringExtra(row, "id");
             String name = stringExtra(row, "name");
-            String avatar = stringExtra(row, "avatar");
             if (id.isBlank() && name.isBlank()) {
                 continue;
             }
@@ -128,11 +127,7 @@ final class AgentMessageFormatter {
             String who = name.isBlank() || name.equals(id)
                     ? firstNonBlank(id, name)
                     : id + "/" + name;
-            sb.append("\n[被@ ").append(seq).append(' ').append(who);
-            if (!avatar.isBlank()) {
-                sb.append(" avatar=").append(avatar);
-            }
-            sb.append(']');
+            sb.append("\n[被@ ").append(seq).append(' ').append(who).append(']');
         }
         return sb.toString();
     }

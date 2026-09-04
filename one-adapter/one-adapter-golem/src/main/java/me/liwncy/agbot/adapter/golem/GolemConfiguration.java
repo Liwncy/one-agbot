@@ -1,6 +1,7 @@
 package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
+import me.liwncy.agbot.adapter.golem.api.GolemChatroomRoster;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMediaResolver;
 import me.liwncy.agbot.adapter.golem.inbound.GolemMentionEnricher;
 import me.liwncy.agbot.adapter.golem.inbound.GolemQuoteMediaEnricher;
@@ -70,9 +71,15 @@ public class GolemConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(GolemChatroomRoster.class)
+    public GolemChatroomRoster golemChatroomRoster(GolemApiClient apiClient) {
+        return new GolemChatroomRoster(apiClient);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(GolemMentionEnricher.class)
-    public GolemMentionEnricher golemMentionEnricher(GolemApiClient apiClient) {
-        return new GolemMentionEnricher(apiClient);
+    public GolemMentionEnricher golemMentionEnricher(GolemChatroomRoster roster) {
+        return new GolemMentionEnricher(roster);
     }
 
     @Bean
@@ -101,8 +108,8 @@ public class GolemConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "spring.ai.mcp.server", name = "enabled", havingValue = "true")
-    public GolemFakeForwardMcpTool golemFakeForwardMcpTool() {
-        return new GolemFakeForwardMcpTool();
+    public GolemFakeForwardMcpTool golemFakeForwardMcpTool(GolemChatroomRoster roster) {
+        return new GolemFakeForwardMcpTool(roster);
     }
 
     @Bean
