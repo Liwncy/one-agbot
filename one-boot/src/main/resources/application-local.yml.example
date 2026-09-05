@@ -8,3 +8,11 @@ spring:
 
 snail-ai:
   token: your-snail-ai-token
+
+# 短句模型（OpenAI 兼容 /chat/completions）。不配则异常仍用固定模板
+agbot:
+  agent:
+    quick-line:
+      base-url: https://api.siliconflow.cn/v1
+      api-key: your-api-key
+      model: Qwen/Qwen2.5-7B-Instruct

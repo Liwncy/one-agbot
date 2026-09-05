@@ -48,6 +48,15 @@ agbot:
     context-window-minutes: 10
     context-max-messages: 15
     context-max-images: 3
+    # 无会话短句（异常改写等）。未配 base-url / model 时不调用，直接用模板
+    quick-line:
+      enabled: true
+      base-url: ${AGBOT_QUICK_LINE_BASE_URL:}
+      api-key: ${AGBOT_QUICK_LINE_API_KEY:}
+      model: ${AGBOT_QUICK_LINE_MODEL:}
+      timeout-ms: 1500
+      max-chars: 40
+      speaker: 小聪明儿
   adapter:
     golem:
       # 取值对齐 xchatbot wrangler.toml（WECHAT_* / BOT_*）

@@ -6,6 +6,7 @@ import com.aizuda.snail.ai.openapi.client.core.api.OpenApiUserClient;
 import com.aizuda.snail.ai.openapi.client.starter.SnailAiOpenApiAutoConfiguration;
 import me.liwncy.agbot.agent.SnailAiAgentBridge;
 import me.liwncy.agbot.agent.SnailAiOpenApiClient;
+import me.liwncy.agbot.agent.quickline.QuickLineClient;
 import me.liwncy.agbot.agent.roleplay.InMemoryRoleplaySessionStore;
 import me.liwncy.agbot.agent.roleplay.RedisRoleplaySessionStore;
 import me.liwncy.agbot.agent.roleplay.RoleplayCatalog;
@@ -84,6 +85,12 @@ public class AgentAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    public QuickLineClient quickLineClient(AgbotAgentProperties properties) {
+        return new QuickLineClient(properties);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(AgentBridge.class)
     public AgentBridge agentBridge(SnailAiOpenApiClient client,
                                    ConversationMapper conversationMapper,
@@ -91,8 +98,9 @@ public class AgentAutoConfiguration {
                                    ObjectProvider<AdapterRuntime> runtimeProvider,
                                    ConversationTurnGuard turnGuard,
                                    RoleplayService roleplay,
-                                   ObjectProvider<ChatLogService> chatLog) {
-        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider, turnGuard, roleplay, chatLog);
+                                   ObjectProvider<ChatLogService> chatLog,
+                                   QuickLineClient quickLine) {
+        return new SnailAiAgentBridge(client, conversationMapper, properties, runtimeProvider, turnGuard, roleplay, chatLog, quickLine);
     }
 
     private static boolean pingRedis(StringRedisTemplate template) {

@@ -1,6 +1,7 @@
 package me.liwncy.agbot.agent;
 
 import me.liwncy.agbot.agent.config.AgbotAgentProperties;
+import me.liwncy.agbot.agent.quickline.QuickLineClient;
 import me.liwncy.agbot.agent.roleplay.RoleplayCharacter;
 import me.liwncy.agbot.agent.roleplay.RoleplayService;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
@@ -43,6 +44,7 @@ public class SnailAiAgentBridge implements AgentBridge {
     private final ConversationTurnGuard turnGuard;
     private final RoleplayService roleplay;
     private final ObjectProvider<ChatLogService> chatLogProvider;
+    private final QuickLineClient quickLine;
 
     public SnailAiAgentBridge(SnailAiOpenApiClient client,
                               ConversationMapper conversationMapper,
@@ -50,7 +52,8 @@ public class SnailAiAgentBridge implements AgentBridge {
                               ObjectProvider<AdapterRuntime> runtimeProvider,
                               ConversationTurnGuard turnGuard,
                               RoleplayService roleplay,
-                              ObjectProvider<ChatLogService> chatLogProvider) {
+                              ObjectProvider<ChatLogService> chatLogProvider,
+                              QuickLineClient quickLine) {
         this.client = client;
         this.conversationMapper = conversationMapper;
         this.properties = properties;
@@ -58,6 +61,7 @@ public class SnailAiAgentBridge implements AgentBridge {
         this.turnGuard = turnGuard;
         this.roleplay = roleplay;
         this.chatLogProvider = chatLogProvider;
+        this.quickLine = quickLine;
     }
 
     @Override
@@ -85,7 +89,7 @@ public class SnailAiAgentBridge implements AgentBridge {
             try {
                 return doHandle(msgInfo);
             } catch (Exception e) {
-                String reply = AgentUserReply.fromThrowable(e);
+                String reply = errorLine(msgInfo, AgentUserReply.fromThrowable(e));
                 log.warn("Agent handle failed, reply friendly userId={} reply={} root={}",
                         msgInfo.userId(), reply, rootMessage(e), e);
                 return new AgentOutcome.Reply(ReplyInfo.text(reply, msgInfo));
@@ -172,13 +176,15 @@ public class SnailAiAgentBridge implements AgentBridge {
                     content,
                     imageIds
             );
-            answer = AgentUserReply.fromAnswer(raw);
-            if (!answer.equals(raw == null ? "" : raw)) {
+            if (AgentUserReply.isErrorish(raw)) {
+                answer = errorLine(msgInfo, AgentUserReply.fromAnswer(raw));
                 log.warn("Agent raw answer sanitized openId={} conversationId={} raw={}",
                         openId, conversationId, preview(raw));
+            } else {
+                answer = raw;
             }
         } catch (Exception e) {
-            answer = AgentUserReply.fromThrowable(e);
+            answer = errorLine(msgInfo, AgentUserReply.fromThrowable(e));
             log.warn("Agent chat failed, reply friendly openId={} conversationId={} reply={} root={}",
                     openId, conversationId, answer, rootMessage(e), e);
         }
@@ -216,7 +222,7 @@ public class SnailAiAgentBridge implements AgentBridge {
             );
             flusher.finish();
         } catch (Exception e) {
-            String friendly = AgentUserReply.fromThrowable(e);
+            String friendly = errorLine(msgInfo, AgentUserReply.fromThrowable(e));
             log.warn("Agent stream failed openId={} conversationId={} sent={} reply={} root={}",
                     openId, conversationId, sent.get(), friendly, rootMessage(e), e);
             if (sent.get() == 0) {
@@ -226,16 +232,17 @@ public class SnailAiAgentBridge implements AgentBridge {
             return new AgentOutcome.Handled("stream-error-partial");
         }
 
-        String sanitized = AgentUserReply.fromAnswer(full);
+        String seed = (full == null || full.isBlank())
+                ? AgentUserReply.fromEmptyStream()
+                : AgentUserReply.fromAnswer(full);
         if (sent.get() == 0) {
-            // 模型没吐字，或分片条件未触发：兜底一条
+            String reply = errorLine(msgInfo, seed);
             log.info("Agent stream empty fragments openId={} conversationId={} full={}",
                     openId, conversationId, preview(full));
-            return new AgentOutcome.Reply(ReplyInfo.text(sanitized, msgInfo));
+            return new AgentOutcome.Reply(ReplyInfo.text(reply, msgInfo));
         }
-        // 全文被识别成错误串且与已发内容不同时，补一句友好提示
-        if (!sanitized.equals(full == null ? "" : full) && looksLikeTechnicalDump(full)) {
-            pushPart(runtime, msgInfo, sanitized);
+        if (!seed.equals(full == null ? "" : full) && looksLikeTechnicalDump(full)) {
+            pushPart(runtime, msgInfo, errorLine(msgInfo, seed));
         }
         log.info("Agent stream done openId={} conversationId={} userId={} parts={} full={}",
                 openId, conversationId, msgInfo.userId(), sent.get(), preview(full));
@@ -513,6 +520,20 @@ public class SnailAiAgentBridge implements AgentBridge {
                     + ", mime=" + media.mime() + ")";
             case PLATFORM -> media.form() + "(" + preview(media.platformId(), 120) + ", usable=false)";
         };
+    }
+
+    private String errorLine(MsgInfo msgInfo, String seed) {
+        return quickLine.line(AgentUserReply.errorRewrite(seed, speakerName(msgInfo)));
+    }
+
+    private String speakerName(MsgInfo msgInfo) {
+        RoleplayCharacter character = roleplay.current(msgInfo);
+        if (character != null && character.name() != null && !character.name().isBlank()) {
+            return character.name();
+        }
+        AgbotAgentProperties.QuickLine q = properties.getQuickLine();
+        String configured = q == null ? "" : q.getSpeaker();
+        return configured == null || configured.isBlank() ? "小聪明儿" : configured.trim();
     }
 
     private static String preview(String text) {

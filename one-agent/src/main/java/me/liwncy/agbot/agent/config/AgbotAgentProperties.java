@@ -23,6 +23,8 @@ public class AgbotAgentProperties {
     private int contextMaxMessages = 10;
     /** 历史里最多再上传几张未进过模型的图；≤0 不传历史图。 */
     private int contextMaxImages = 3;
+    /** 无会话短句补全（异常改写等）；未配 base-url/model 时不调用。 */
+    private QuickLine quickLine = new QuickLine();
 
     public boolean isEnabled() {
         return enabled;
@@ -94,5 +96,88 @@ public class AgbotAgentProperties {
 
     public void setContextMaxImages(int contextMaxImages) {
         this.contextMaxImages = contextMaxImages;
+    }
+
+    public QuickLine getQuickLine() {
+        return quickLine;
+    }
+
+    public void setQuickLine(QuickLine quickLine) {
+        this.quickLine = quickLine == null ? new QuickLine() : quickLine;
+    }
+
+    /**
+     * OpenAI 兼容短句模型。异常改写只是其中一个 {@code task}。
+     */
+    public static class QuickLine {
+        private boolean enabled = true;
+        private String baseUrl = "";
+        private String apiKey = "";
+        private String model = "";
+        private int timeoutMs = 1_500;
+        private int maxChars = 40;
+        private String speaker = "小聪明儿";
+
+        public boolean ready() {
+            return enabled
+                    && baseUrl != null && !baseUrl.isBlank()
+                    && model != null && !model.isBlank();
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getModel() {
+            return model;
+        }
+
+        public void setModel(String model) {
+            this.model = model;
+        }
+
+        public int getTimeoutMs() {
+            return timeoutMs;
+        }
+
+        public void setTimeoutMs(int timeoutMs) {
+            this.timeoutMs = timeoutMs;
+        }
+
+        public int getMaxChars() {
+            return maxChars;
+        }
+
+        public void setMaxChars(int maxChars) {
+            this.maxChars = maxChars;
+        }
+
+        public String getSpeaker() {
+            return speaker;
+        }
+
+        public void setSpeaker(String speaker) {
+            this.speaker = speaker;
+        }
     }
 }

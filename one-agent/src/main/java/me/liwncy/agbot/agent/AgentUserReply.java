@@ -1,5 +1,7 @@
 package me.liwncy.agbot.agent;
 
+import me.liwncy.agbot.agent.quickline.QuickLineSpec;
+
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -9,45 +11,56 @@ import java.util.concurrent.ThreadLocalRandom;
 final class AgentUserReply {
 
     private static final String[] BLOCKED = {
-            "这内容我看不了 😅",
-            "这张过不去，换一张呗",
-            "这个我接不住 😅",
-            "审核不让看，再换个试试",
+            "这句我接不住 😅",
+            "有的话过不去，换个话题",
+            "这轮看不了，聊点别的",
+            "这话我不敢接 😅",
     };
 
     private static final String[] TIMEOUT = {
-            "等太久了，再发一次",
-            "卡住了，稍后再试下",
-            "超时了，再来一句？",
+            "等太久了，待会再叫我",
+            "卡住了，稍后再试",
+            "超时了，过会儿再说",
     };
 
     private static final String[] STREAM_FAIL = {
-            "没回上来，再试下",
-            "刚才没接住，再说一遍？",
-            "断了一下，再发一次",
-            "没整明白，你再发下 🤔",
+            "刚才那轮没接住",
+            "断了一下，待会再说",
+            "这轮没整明白 🤔",
+            "没回上来，过会儿再聊",
     };
 
     private static final String[] GENERIC = {
-            "没整好，再试下",
-            "出了点岔子，再来一次",
-            "这边有点懵，稍后再试 😅",
-            "没搞定，你再发一遍？",
+            "这边有点懵 😅",
+            "没整好，待会再试",
+            "出了点岔子",
+            "这轮没搞定",
     };
 
-    private static final String[] EMPTY = {
-            "没回上来，再试下",
-            "空空的，再说一句？",
-            "没收到有效回复，再发下",
-    };
+    private static final String ERROR_REWRITE =
+            "把原句改成更像你在微信里随口说的一句。只能一句，不超过20字。"
+                    + "不要解释，不要提AI、审核、异常、模型。意思必须和原句同类。";
 
     private AgentUserReply() {
+    }
+
+    static QuickLineSpec errorRewrite(String seed, String speaker) {
+        return new QuickLineSpec("error-rewrite", ERROR_REWRITE, seed, speaker);
+    }
+
+    static boolean isErrorish(String text) {
+        return text == null || text.isBlank() || looksLikeError(text.trim());
+    }
+
+    /** 流结束但一个字都没有（451 被上游吞掉时也走这里）。 */
+    static String fromEmptyStream() {
+        return pick(STREAM_FAIL);
     }
 
     /** 同步对话返回的正文；识别服务端包进来的错误串。 */
     static String fromAnswer(String answer) {
         if (answer == null || answer.isBlank()) {
-            return pick(EMPTY);
+            return fromEmptyStream();
         }
         String text = answer.trim();
         if (!looksLikeError(text)) {
