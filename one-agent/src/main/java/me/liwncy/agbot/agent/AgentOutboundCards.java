@@ -14,17 +14,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 从 Agent 文本识别卡片出站协议（单独一行，勿把任意 http 当卡片）：
+ * 从 Agent 文本识别卡片出站协议（单独一行，定长槽位，勿把任意 http 当卡片）：
  * <ul>
  *   <li>{@code link:标题|描述|url|封面}</li>
  *   <li>{@code music:歌名|歌手|页面url|音频url|封面}</li>
+ *   <li>{@code image:图片url}</li>
  *   <li>{@code video:视频url|封面url|时长秒}</li>
+ *   <li>{@code audio:语音url|时长秒|格式}（{@code voice:} 同义）</li>
  *   <li>{@code app:类型 <xml...>}</li>
  * </ul>
  */
 final class AgentOutboundCards {
     private static final Pattern ANY_LINE = Pattern.compile(
-            "(?im)^(?:link:.+|music:.+|video:.+|app:\\d+\\s+<.+)$");
+            "(?im)^(?:link:.+|music:.+|video:.+|image:.+|audio:.+|voice:.+|app:\\d+\\s+<.+)$");
     private static final Pattern APP_LINE = Pattern.compile(
             "(?i)^app:(\\d+)\\s+(<.+)$");
 
@@ -32,14 +34,17 @@ final class AgentOutboundCards {
     }
 
     enum Kind {
-        LINK, MUSIC, VIDEO, APP
+        LINK, MUSIC, VIDEO, IMAGE, AUDIO, APP
     }
 
     record Ref(Kind kind, String title, String desc, String url, String dataUrl, String thumb, String duration,
-               int appType, String xml) {
+               String format, int appType, String xml) {
         boolean hasTarget() {
             if (kind == Kind.APP) {
                 return xml != null && !xml.isBlank();
+            }
+            if (kind == Kind.MUSIC) {
+                return looksLikeHttp(url) || looksLikeHttp(dataUrl);
             }
             return looksLikeHttp(url);
         }
@@ -51,6 +56,12 @@ final class AgentOutboundCards {
             if (kind == Kind.VIDEO) {
                 return "video:" + firstNonBlank(url, title);
             }
+            if (kind == Kind.IMAGE) {
+                return "image:" + firstNonBlank(url, title);
+            }
+            if (kind == Kind.AUDIO) {
+                return "audio:" + firstNonBlank(url, title);
+            }
             return (kind == Kind.MUSIC ? "music:" : "link:") + firstNonBlank(title, url);
         }
 
@@ -59,6 +70,8 @@ final class AgentOutboundCards {
                 case LINK -> joinLine("link:", title, desc, url, thumb);
                 case MUSIC -> joinLine("music:", title, desc, url, dataUrl, thumb);
                 case VIDEO -> joinLine("video:", url, thumb, duration);
+                case IMAGE -> joinLine("image:", url);
+                case AUDIO -> joinLine("audio:", url, duration, format);
                 case APP -> "app:" + appType + " " + xml;
             };
         }
@@ -71,7 +84,13 @@ final class AgentOutboundCards {
                         url,
                         blankToEmpty(thumb),
                         inbound);
-                case MUSIC -> ReplyInfo.app(3, musicXml(title, desc, url, dataUrl, thumb), inbound);
+                case MUSIC -> ReplyInfo.music(
+                        firstNonBlank(title, "音乐"),
+                        blankToEmpty(desc),
+                        blankToEmpty(url),
+                        blankToEmpty(dataUrl),
+                        blankToEmpty(thumb),
+                        inbound);
                 case VIDEO -> {
                     Map<String, Object> extra = new HashMap<>();
                     if (!blankToEmpty(thumb).isEmpty()) {
@@ -84,18 +103,25 @@ final class AgentOutboundCards {
                             ReplyInfo.of(MsgType.VIDEO, null, url, null, null, null, extra),
                             inbound);
                 }
+                case IMAGE -> ReplyInfo.image(url, inbound);
+                case AUDIO -> ReplyInfo.audio(url, blankToEmpty(duration), blankToEmpty(format), inbound);
                 case APP -> ReplyInfo.app(appType, xml, inbound);
             };
         }
 
         ReplyInfo toLinkFallback(MsgInfo inbound) {
-            if (!looksLikeHttp(url)) {
+            String fallbackUrl = looksLikeHttp(url) ? url : dataUrl;
+            if (!looksLikeHttp(fallbackUrl)) {
                 return null;
             }
             return ReplyInfo.link(
-                    firstNonBlank(title, kind == Kind.MUSIC ? "音乐" : kind == Kind.VIDEO ? "视频" : "链接"),
-                    kind == Kind.VIDEO ? "点开看看" : blankToEmpty(desc),
-                    url,
+                    firstNonBlank(title, kind == Kind.MUSIC ? "音乐"
+                            : kind == Kind.VIDEO ? "视频"
+                            : kind == Kind.IMAGE ? "图片"
+                            : kind == Kind.AUDIO ? "语音" : "链接"),
+                    kind == Kind.VIDEO || kind == Kind.IMAGE || kind == Kind.AUDIO
+                            ? "点开看看" : blankToEmpty(desc),
+                    fallbackUrl,
                     blankToEmpty(thumb),
                     inbound);
         }
@@ -128,7 +154,7 @@ final class AgentOutboundCards {
             if (xml.isBlank()) {
                 return null;
             }
-            return new Ref(Kind.APP, "", "", "", "", "", "", type, xml);
+            return new Ref(Kind.APP, "", "", "", "", "", "", "", type, xml);
         }
         String lower = trimmed.toLowerCase(Locale.ROOT);
         if (lower.startsWith("link:")) {
@@ -139,6 +165,12 @@ final class AgentOutboundCards {
         }
         if (lower.startsWith("video:")) {
             return parseVideo(trimmed.substring(6));
+        }
+        if (lower.startsWith("image:")) {
+            return parseImage(trimmed.substring(6));
+        }
+        if (lower.startsWith("audio:") || lower.startsWith("voice:")) {
+            return parseAudio(trimmed.substring(6));
         }
         return null;
     }
@@ -170,48 +202,37 @@ final class AgentOutboundCards {
         return new Split(List.copyOf(refs), remaining);
     }
 
+    /**
+     * 定长槽位。末尾空槽可省略；中间空槽必须留 {@code |}。
+     * {@code link:} 仅当旧的两段 {@code 标题|url} 时把第 2 槽当作 url，避免跳档误伤历史行。
+     */
     private static Ref parsePiped(Kind kind, String payload) {
         String[] parts = payload.split("\\|", -1);
-        if (parts.length < 2) {
-            return null;
-        }
-        String title = trimPart(parts, 0);
-        String desc = "";
-        String url = "";
-        String dataUrl = "";
-        String thumb = "";
-        String duration = "";
         if (kind == Kind.LINK) {
-            if (parts.length == 2) {
-                url = trimPart(parts, 1);
-            } else if (parts.length == 3) {
-                if (looksLikeHttp(trimPart(parts, 1))) {
-                    url = trimPart(parts, 1);
-                    thumb = trimPart(parts, 2);
-                } else {
-                    desc = trimPart(parts, 1);
-                    url = trimPart(parts, 2);
-                }
-            } else {
-                desc = trimPart(parts, 1);
-                url = trimPart(parts, 2);
-                thumb = trimPart(parts, 3);
-            }
-        } else {
-            desc = parts.length > 1 ? trimPart(parts, 1) : "";
-            url = parts.length > 2 ? trimPart(parts, 2) : "";
-            dataUrl = parts.length > 3 ? trimPart(parts, 3) : "";
-            thumb = parts.length > 4 ? trimPart(parts, 4) : "";
-            if (parts.length == 2 && looksLikeHttp(desc)) {
-                url = desc;
+            String title = trimPart(parts, 0);
+            String desc = trimPart(parts, 1);
+            String url = sanitizeUrl(trimPart(parts, 2));
+            String thumb = sanitizeUrl(trimPart(parts, 3));
+            if (parts.length == 2 && looksLikeHttp(desc) && !looksLikeHttp(title)) {
+                url = sanitizeUrl(desc);
                 desc = "";
             }
+            if (!looksLikeHttp(url)) {
+                return null;
+            }
+            if (!thumb.isEmpty() && !looksLikeHttp(thumb)) {
+                thumb = "";
+            }
+            return new Ref(kind, title, desc, url, "", thumb, "", "", 0, "");
         }
-        url = sanitizeUrl(url);
-        dataUrl = sanitizeUrl(dataUrl);
-        thumb = sanitizeUrl(thumb);
-        if (!looksLikeHttp(url)) {
-            return null;
+        String title = trimPart(parts, 0);
+        String desc = trimPart(parts, 1);
+        String url = sanitizeUrl(trimPart(parts, 2));
+        String dataUrl = sanitizeUrl(trimPart(parts, 3));
+        String thumb = sanitizeUrl(trimPart(parts, 4));
+        if (!looksLikeHttp(url) && looksLikeHttp(desc) && parts.length == 2) {
+            url = sanitizeUrl(desc);
+            desc = "";
         }
         if (!dataUrl.isEmpty() && !looksLikeHttp(dataUrl)) {
             dataUrl = "";
@@ -219,7 +240,10 @@ final class AgentOutboundCards {
         if (!thumb.isEmpty() && !looksLikeHttp(thumb)) {
             thumb = "";
         }
-        return new Ref(kind, title, desc, url, dataUrl, thumb, duration, 0, "");
+        if (!looksLikeHttp(url) && !looksLikeHttp(dataUrl)) {
+            return null;
+        }
+        return new Ref(kind, title, desc, url, dataUrl, thumb, "", "", 0, "");
     }
 
     private static Ref parseVideo(String payload) {
@@ -239,23 +263,30 @@ final class AgentOutboundCards {
         if (!duration.isEmpty() && !duration.matches("\\d+")) {
             duration = "";
         }
-        return new Ref(Kind.VIDEO, "", "", url, "", thumb, duration, 0, "");
+        return new Ref(Kind.VIDEO, "", "", url, "", thumb, duration, "", 0, "");
     }
 
-    static String musicXml(String title, String singer, String url, String dataUrl, String thumb) {
-        return "<appmsg appid=\"\" sdkver=\"0\">"
-                + "<title>" + escapeXml(firstNonBlank(title, "音乐")) + "</title>"
-                + "<des>" + escapeXml(blankToEmpty(singer)) + "</des>"
-                + "<action></action>"
-                + "<type>3</type>"
-                + "<showtype>0</showtype>"
-                + "<url>" + escapeXml(blankToEmpty(url)) + "</url>"
-                + "<lowurl></lowurl>"
-                + "<dataurl>" + escapeXml(blankToEmpty(dataUrl)) + "</dataurl>"
-                + "<lowdataurl></lowdataurl>"
-                + "<songalbumurl>" + escapeXml(blankToEmpty(thumb)) + "</songalbumurl>"
-                + "<songlyric></songlyric>"
-                + "</appmsg>";
+    private static Ref parseImage(String payload) {
+        String[] parts = payload.split("\\|", -1);
+        String url = sanitizeUrl(trimPart(parts, 0));
+        if (!looksLikeHttp(url)) {
+            return null;
+        }
+        return new Ref(Kind.IMAGE, "", "", url, "", "", "", "", 0, "");
+    }
+
+    private static Ref parseAudio(String payload) {
+        String[] parts = payload.split("\\|", -1);
+        String url = sanitizeUrl(trimPart(parts, 0));
+        String duration = blankToEmpty(trimPart(parts, 1));
+        String format = blankToEmpty(trimPart(parts, 2));
+        if (!looksLikeHttp(url)) {
+            return null;
+        }
+        if (!duration.isEmpty() && !duration.matches("\\d+")) {
+            duration = "";
+        }
+        return new Ref(Kind.AUDIO, "", "", url, "", "", duration, format, 0, "");
     }
 
     private static String joinLine(String prefix, String... fields) {
@@ -300,17 +331,6 @@ final class AgentOutboundCards {
         }
         String lower = value.trim().toLowerCase(Locale.ROOT);
         return lower.startsWith("http://") || lower.startsWith("https://");
-    }
-
-    private static String escapeXml(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        return value.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
     }
 
     private static String firstNonBlank(String... values) {

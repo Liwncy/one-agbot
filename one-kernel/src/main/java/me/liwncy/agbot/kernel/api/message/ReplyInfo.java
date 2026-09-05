@@ -40,7 +40,18 @@ public record ReplyInfo(
     }
 
     public static ReplyInfo audio(String path, MsgInfo inbound) {
-        return merge(of(MsgType.AUDIO, null, path, null, null, null), inbound);
+        return audio(path, null, null, inbound);
+    }
+
+    public static ReplyInfo audio(String path, String duration, String format, MsgInfo inbound) {
+        Map<String, Object> extra = new HashMap<>();
+        if (duration != null && !duration.isBlank()) {
+            extra.put(ChannelExtraKeys.DURATION, duration.trim());
+        }
+        if (format != null && !format.isBlank()) {
+            extra.put(ChannelExtraKeys.FORMAT, format.trim());
+        }
+        return merge(of(MsgType.AUDIO, null, path, null, null, null, extra), inbound);
     }
 
     public static ReplyInfo file(String path, MsgInfo inbound) {
@@ -64,6 +75,14 @@ public record ReplyInfo(
         Map<String, Object> extra = new HashMap<>();
         extra.put(ChannelExtraKeys.THUMB, thumb == null ? "" : thumb);
         return merge(of(MsgType.LINK, desc, null, null, title, url, extra), inbound);
+    }
+
+    public static ReplyInfo music(String title, String singer, String pageUrl, String dataUrl,
+                                 String thumb, MsgInfo inbound) {
+        Map<String, Object> extra = new HashMap<>();
+        extra.put(ChannelExtraKeys.THUMB, thumb == null ? "" : thumb);
+        extra.put(ChannelExtraKeys.DATA_URL, dataUrl == null ? "" : dataUrl);
+        return merge(of(MsgType.MUSIC, singer, null, null, title, pageUrl, extra), inbound);
     }
 
     public static ReplyInfo app(int appType, String xml, MsgInfo inbound) {

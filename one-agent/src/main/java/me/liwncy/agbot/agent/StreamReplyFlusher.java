@@ -16,9 +16,9 @@ final class StreamReplyFlusher {
             "https?://[^\\s<>\"'\\]\\)\\u4e00-\\u9fff]+",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern EMOJI_TOKEN = Pattern.compile(
-            "(?i)emoji:[0-9a-f]{32}(?:[ \\t]+https?://\\S+)?");
+            "(?i)emoji:[0-9a-f]{32}(?:[ \\t]*\\|[ \\t]*https?://\\S+|[ \\t]+https?://\\S+)?");
     private static final Pattern CARD_LINE = Pattern.compile(
-            "(?im)^(?:link:|music:|video:|app:\\d+\\s).+$");
+            "(?im)^(?:link:|music:|video:|image:|audio:|voice:|app:\\d+\\s).+$");
 
     private final StringBuilder buffer = new StringBuilder();
     private final int minChars;
@@ -201,11 +201,7 @@ final class StreamReplyFlusher {
         }
         if (emojis.hasEmojis()) {
             for (AgentOutboundEmoji.Ref ref : emojis.emojis()) {
-                if (ref.imageUrl() == null || ref.imageUrl().isBlank()) {
-                    out.add("emoji:" + ref.md5());
-                } else {
-                    out.add("emoji:" + ref.md5() + " " + ref.imageUrl());
-                }
+                out.add(ref.toLine());
             }
         }
         if (images.hasImages()) {

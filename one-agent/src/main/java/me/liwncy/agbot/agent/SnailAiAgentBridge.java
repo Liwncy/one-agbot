@@ -266,6 +266,10 @@ public class SnailAiAgentBridge implements AgentBridge {
         if (ref == null || !ref.hasTarget()) {
             return;
         }
+        if (ref.kind() == AgentOutboundCards.Kind.IMAGE) {
+            pushImageOrFallback(runtime, msgInfo, ref.url());
+            return;
+        }
         try {
             ReplyInfo reply = ref.toReply(msgInfo);
             runtime.push(msgInfo.platform(), reply).join();

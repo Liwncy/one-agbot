@@ -18,6 +18,8 @@ public final class ChannelExtraKeys {
     public static final String DURATION = "duration";
     public static final String MD5 = "md5";
     public static final String FORMAT = "format";
+    /** 音乐卡可播音频直链（出站 {@code MsgType.MUSIC}） */
+    public static final String DATA_URL = "dataUrl";
 
     /** 媒体传输形态，见 {@link MediaForm} */
     public static final String MEDIA_FORM = "mediaForm";

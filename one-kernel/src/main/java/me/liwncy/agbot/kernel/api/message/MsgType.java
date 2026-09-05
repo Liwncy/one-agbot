@@ -14,6 +14,8 @@ public final class MsgType {
     public static final String FILE = "file";
     public static final String EMOJI = "emoji";
     public static final String LINK = "link";
+    /** 出站音乐卡；适配器拼平台结构，无音频可降级为 {@link #LINK}。 */
+    public static final String MUSIC = "music";
     public static final String CARD = "card";
     public static final String APP = "app";
     public static final String POSITION = "position";
@@ -23,7 +25,7 @@ public final class MsgType {
     public static final String VOICE = "voice";
 
     public static final Set<String> ALL = Set.of(
-            TEXT, IMAGE, VIDEO, AUDIO, FILE, EMOJI, LINK, CARD, APP, POSITION, FORWARD
+            TEXT, IMAGE, VIDEO, AUDIO, FILE, EMOJI, LINK, MUSIC, CARD, APP, POSITION, FORWARD
     );
 
     private MsgType() {

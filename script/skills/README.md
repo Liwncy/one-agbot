@@ -6,7 +6,7 @@
 
 - `mcp-tools/SKILL.md`：何时调哪个通用 MCP 工具；闲聊不调；对方要诗走诗词
 - `wechat-play/SKILL.md`：绑在这台微信登录态上的玩法（随机朋友、聊天记录卡等）；不写进 mcp-tools
-- `outbound-reply/SKILL.md`：图/视频裸链、表情、链接/音乐卡、应用 xml 怎么写成通道能发的一行
+- `outbound-reply/SKILL.md`：按意图选类型，按定长槽位写出站行；缺必填槽降级，不编链接
 
 通用 MCP 加了新工具：在 `mcp-tools/SKILL.md` 的表里补一行。Golem 专属工具写进 `wechat-play/SKILL.md`。都不要写回 `sai_agent.instruction`。
 

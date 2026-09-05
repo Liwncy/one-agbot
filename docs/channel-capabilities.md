@@ -19,10 +19,11 @@
 | `text` | `msg`, `remind` | `@` 列表（wxid，逗号分隔或 List 序列化进字段） |
 | `image` | `path`, `msg`=caption | |
 | `video` | `path`, `msg`, `extra.thumb`, `extra.duration` | |
-| `audio` | `path`；入站 `voice` 归一为 `audio` | |
+| `audio` | `path`；`extra.duration` / `extra.format`；入站 `voice` 归一为 `audio` | 出站语音；时长由适配器换算 |
 | `file` | `path`, `msg`=文件名 | |
 | `emoji` | `path` 或 `extra.md5` | |
 | `link` | `title`, `msg`=desc, `url`/`path`, `extra.thumb` | |
+| `music` | `title`, `msg`=歌手, `url`=页面, `extra.dataUrl`, `extra.thumb` | 出站；适配器拼平台结构，无音频可降级为 `link` |
 | `card` | `extra.cardUsername` 等 | |
 | `app` | `msg`=xml, `extra.appType` | 含引用消息等 |
 | `position` | `extra.lat/lon/label/poiName/scale` | |
@@ -61,7 +62,7 @@
 | `mentionIds` | 入站被 @ 的 wxid 列表 |
 | `mentions` | 入站被 @ 的人 `[{seq, id, name, avatar}]`，seq 从 1 起 |
 | `quoteContent` / `quoteMsgType` | 引用原文与原类型 |
-| `thumb` / `duration` / `md5` / `format` | 媒体附属 |
+| `thumb` / `duration` / `md5` / `format` / `dataUrl` | 媒体附属；`dataUrl` 为音乐卡音频直链 |
 | `mediaForm` / `mediaUrl` / `mediaBase64` / `mediaPlatformId` / `mediaMime` / `mediaSize` | 媒体传输 |
 | `cardUsername` / `cardNickname` / `cardAlias` | 名片 |
 | `appType` / `forwardType` | app / forward |

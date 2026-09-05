@@ -1,6 +1,7 @@
 package me.liwncy.agbot.adapter.golem;
 
 import me.liwncy.agbot.adapter.golem.api.GolemApiClient;
+import me.liwncy.agbot.adapter.golem.wechat.WechatMusicXml;
 import me.liwncy.agbot.kernel.api.adapter.AdapterContext;
 import me.liwncy.agbot.kernel.api.adapter.ChannelCapabilities;
 import me.liwncy.agbot.kernel.api.adapter.ChatAdapter;
@@ -34,7 +35,7 @@ public class GolemAdapter implements ChatAdapter {
             ))
             .outboundTypes(Set.of(
                     MsgType.TEXT, MsgType.IMAGE, MsgType.VIDEO, MsgType.AUDIO,
-                    MsgType.EMOJI, MsgType.LINK, MsgType.CARD, MsgType.APP,
+                    MsgType.EMOJI, MsgType.LINK, MsgType.MUSIC, MsgType.CARD, MsgType.APP,
                     MsgType.POSITION, MsgType.FORWARD
             ))
             .revoke(true)
@@ -136,6 +137,13 @@ public class GolemAdapter implements ChatAdapter {
                     replyInfo.msg(),
                     firstNonBlank(replyInfo.url(), replyInfo.path()),
                     stringExtra(extra, ChannelExtraKeys.THUMB));
+            case MsgType.MUSIC -> sendMusicOrFallback(
+                    receiver,
+                    replyInfo.title(),
+                    replyInfo.msg(),
+                    firstNonBlank(replyInfo.url(), replyInfo.path()),
+                    stringExtra(extra, ChannelExtraKeys.DATA_URL),
+                    stringExtra(extra, ChannelExtraKeys.THUMB));
             case MsgType.CARD -> apiClient.sendCard(
                     receiver,
                     firstNonBlank(stringExtra(extra, ChannelExtraKeys.CARD_USERNAME), replyInfo.msg()),
@@ -185,11 +193,33 @@ public class GolemAdapter implements ChatAdapter {
 
     private String sendVoiceOrFallback(String receiver, String voiceUrl, String duration, String format) {
         try {
-            return apiClient.sendVoice(receiver, voiceUrl, duration, format);
+            return apiClient.sendVoice(receiver, voiceUrl, voiceDurationMs(duration), format);
         } catch (Exception e) {
             log.warn("Golem sendVoice failed url={} err={}", preview(voiceUrl), e.toString());
             return sendLinkCard(receiver, "语音", "点开看看", voiceUrl);
         }
+    }
+
+    private String sendMusicOrFallback(String receiver, String title, String singer,
+                                      String pageUrl, String dataUrl, String thumb) {
+        if (looksLikeHttp(dataUrl)) {
+            try {
+                return apiClient.sendApp(receiver, WechatMusicXml.APP_TYPE,
+                        WechatMusicXml.build(title, singer, pageUrl, dataUrl, thumb));
+            } catch (Exception e) {
+                log.warn("Golem sendMusic failed url={} err={}", preview(dataUrl), e.toString());
+            }
+        }
+        String fallbackUrl = looksLikeHttp(pageUrl) ? pageUrl : dataUrl;
+        if (!looksLikeHttp(fallbackUrl)) {
+            log.warn("Golem music missing url, skip title={}", preview(title));
+            return "";
+        }
+        return sendLinkCard(
+                receiver,
+                firstNonBlank(title, "音乐"),
+                singer == null ? "" : singer,
+                fallbackUrl);
     }
 
     private String sendLinkCard(String receiver, String title, String desc, String url) {
@@ -282,5 +312,32 @@ public class GolemAdapter implements ChatAdapter {
             }
         }
         return "";
+    }
+
+    private static boolean looksLikeHttp(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String lower = value.trim().toLowerCase();
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    /** Skill 写秒；Golem 语音接口要毫秒。大于 180 的数字按已经是毫秒处理。 */
+    private static String voiceDurationMs(String duration) {
+        if (duration == null || duration.isBlank()) {
+            return null;
+        }
+        String raw = duration.trim();
+        if (!raw.matches("\\d+")) {
+            return null;
+        }
+        long n = Long.parseLong(raw);
+        if (n <= 0) {
+            return null;
+        }
+        if (n <= 180) {
+            return Long.toString(n * 1000L);
+        }
+        return raw;
     }
 }
