@@ -11,6 +11,8 @@ public class AgbotAgentProperties {
     private boolean enabled = true;
     private long defaultAgentId = 1L;
     private boolean asyncHandled;
+    /** 处理入站对话的专用线程数；排队不丢。I/O 等待，默认 8。 */
+    private int handlePoolSize = 8;
     /** 使用 OpenAPI chatStream，按段落/图片边界分多条推送。 */
     private boolean streamReply = true;
     /** 流式分片的最小字数（图链不受限）。 */
@@ -48,6 +50,14 @@ public class AgbotAgentProperties {
 
     public void setAsyncHandled(boolean asyncHandled) {
         this.asyncHandled = asyncHandled;
+    }
+
+    public int getHandlePoolSize() {
+        return handlePoolSize;
+    }
+
+    public void setHandlePoolSize(int handlePoolSize) {
+        this.handlePoolSize = handlePoolSize;
     }
 
     public boolean isStreamReply() {

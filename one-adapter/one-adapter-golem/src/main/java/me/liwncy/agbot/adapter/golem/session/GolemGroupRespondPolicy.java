@@ -47,7 +47,7 @@ public interface GolemGroupRespondPolicy {
     /**
      * 当前消息是否应按群策略放行（私聊请勿调用）。
      * 白名单用户、关键词命中任何模式都直接放过。
-     * 点名含 @/昵称/引用及跟聊窗；随机另看概率；会话忙时关掉概率。
+     * 点名含 @/昵称/引用及跟聊窗；随机另看概率。
      */
     default boolean allows(MsgInfo msg, boolean mentioned, boolean mentionWindowActive) {
         return allows(msg, mentioned, mentionWindowActive, false);

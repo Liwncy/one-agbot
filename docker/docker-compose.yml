@@ -102,6 +102,7 @@ services:
       AGBOT_QUICK_LINE_BASE_URL: ${AGBOT_QUICK_LINE_BASE_URL:-}
       AGBOT_QUICK_LINE_API_KEY: ${AGBOT_QUICK_LINE_API_KEY:-}
       AGBOT_QUICK_LINE_MODEL: ${AGBOT_QUICK_LINE_MODEL:-}
+      AGBOT_AGENT_HANDLE_POOL_SIZE: ${AGBOT_AGENT_HANDLE_POOL_SIZE:-8}
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs

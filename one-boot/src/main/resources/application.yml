@@ -40,6 +40,8 @@ agbot:
     default-agent-id: 1
     # 角色会话：Hash agbot:roleplay:session，field=platform:account:group|user:id，无 TTL
     async-handled: false
+    # 专用线程处理对话（I/O 等待）；多的排队不丢。8 核机器默认 8
+    handle-pool-size: ${AGBOT_AGENT_HANDLE_POOL_SIZE:8}
     # 流式分片推送：段落/句号/图片链接边界各发一条（false 则仍 sync 整段回）
     stream-reply: true
     stream-min-chars: 16

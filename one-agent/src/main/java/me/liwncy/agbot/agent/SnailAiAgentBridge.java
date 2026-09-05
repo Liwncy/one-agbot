@@ -12,7 +12,6 @@ import me.liwncy.agbot.kernel.api.message.MsgType;
 import me.liwncy.agbot.kernel.api.message.ReplyInfo;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
-import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
 import me.liwncy.agbot.kernel.api.session.SessionKeys;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import me.liwncy.agbot.kernel.chatlog.ChatLogSessions;
@@ -28,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,48 +41,39 @@ public class SnailAiAgentBridge implements AgentBridge {
     private final ConversationMapper conversationMapper;
     private final AgbotAgentProperties properties;
     private final ObjectProvider<AdapterRuntime> runtimeProvider;
-    private final ConversationTurnGuard turnGuard;
     private final RoleplayService roleplay;
     private final ObjectProvider<ChatLogService> chatLogProvider;
     private final QuickLineClient quickLine;
+    private final Executor handleExecutor;
 
     public SnailAiAgentBridge(SnailAiOpenApiClient client,
                               ConversationMapper conversationMapper,
                               AgbotAgentProperties properties,
                               ObjectProvider<AdapterRuntime> runtimeProvider,
-                              ConversationTurnGuard turnGuard,
                               RoleplayService roleplay,
                               ObjectProvider<ChatLogService> chatLogProvider,
-                              QuickLineClient quickLine) {
+                              QuickLineClient quickLine,
+                              Executor handleExecutor) {
         this.client = client;
         this.conversationMapper = conversationMapper;
         this.properties = properties;
         this.runtimeProvider = runtimeProvider;
-        this.turnGuard = turnGuard;
         this.roleplay = roleplay;
         this.chatLogProvider = chatLogProvider;
         this.quickLine = quickLine;
+        this.handleExecutor = handleExecutor;
     }
 
     @Override
     public CompletableFuture<AgentOutcome> handle(MsgInfo msgInfo) {
-        String turnKey = SessionKeys.of(msgInfo);
-        if (!turnGuard.tryOccupy(turnKey)) {
-            log.info("Agent skip busy session={} userId={} userName={} msgType={} content={}",
-                    turnKey, msgInfo.userId(), msgInfo.userName(), msgInfo.msgType(),
-                    preview(msgInfo.msg()));
-            return CompletableFuture.completedFuture(new AgentOutcome.Handled("busy"));
-        }
         if (properties.isAsyncHandled()) {
             CompletableFuture.runAsync(() -> {
                 try {
                     doHandle(msgInfo);
                 } catch (Exception e) {
                     log.error("Async agent handle failed", e);
-                } finally {
-                    turnGuard.release(turnKey);
                 }
-            });
+            }, handleExecutor);
             return CompletableFuture.completedFuture(new AgentOutcome.Handled("async"));
         }
         return CompletableFuture.supplyAsync(() -> {
@@ -93,10 +84,8 @@ public class SnailAiAgentBridge implements AgentBridge {
                 log.warn("Agent handle failed, reply friendly userId={} reply={} root={}",
                         msgInfo.userId(), reply, rootMessage(e), e);
                 return new AgentOutcome.Reply(ReplyInfo.text(reply, msgInfo));
-            } finally {
-                turnGuard.release(turnKey);
             }
-        });
+        }, handleExecutor);
     }
 
     private AgentOutcome doHandle(MsgInfo msgInfo) {

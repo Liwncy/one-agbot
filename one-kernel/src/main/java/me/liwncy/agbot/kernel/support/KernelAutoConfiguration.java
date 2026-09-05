@@ -4,7 +4,6 @@ import me.liwncy.agbot.kernel.api.adapter.ChatAdapter;
 import me.liwncy.agbot.kernel.api.agent.AgentBridge;
 import me.liwncy.agbot.kernel.api.runtime.AdapterRuntime;
 import me.liwncy.agbot.kernel.api.session.ConversationMapper;
-import me.liwncy.agbot.kernel.api.session.ConversationTurnGuard;
 import me.liwncy.agbot.kernel.chatlog.ChatLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +24,6 @@ import java.util.List;
 @EnableConfigurationProperties(KernelProperties.class)
 public class KernelAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(KernelAutoConfiguration.class);
-
-    @Bean
-    @ConditionalOnMissingBean(ConversationTurnGuard.class)
-    public ConversationTurnGuard conversationTurnGuard() {
-        return new ConversationTurnGuard();
-    }
 
     @Bean
     @ConditionalOnMissingBean(ConversationMapper.class)
