@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 宝塔 Webhook / 计划任务调用这个脚本：拉 main → 重新打包 → 起容器
-# 用法：bash /www/wwwroot/one-agbot/docker/deploy.sh
+# 用法：bash /opt/one-agbot/docker/deploy.sh
+# 脚本按自身位置找仓库根目录，clone 到别处时把上面改成实际路径即可
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
