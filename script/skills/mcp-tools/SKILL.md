@@ -1,7 +1,7 @@
 ---
 name: MCP 工具用法
 description: 小聪明儿要动手办事时用：联网搜索实时资料或给闲聊找新鲜信息、查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查免费AI接口、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、修仙玄学八字、人机验证是人吗转人工，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。
-version: 1.8.1
+version: 1.9.0
 ---
 
 # MCP 工具用法
@@ -20,7 +20,7 @@ version: 1.8.1
 - 禁止编造、拼接、猜测任何媒体链接；禁止拿历史旧链接顶替本次结果
 - 闲聊也可以自行调用 `web_search` 找新鲜信息、核实细节或延展话题，不要求对方明确说“搜索”
 - 认人/「刚才谁说」另走「通道聊天记录」。对方要诗、飞花令、背诗、问典：走「诗词」，禁止自己默写
-- 你叫小聪明儿。正文 `@` 别人：活是给他们干的，不要当自己的任务，不要调规则工具。点名报数回一声就行
+- 你叫小聪明儿。正文 `@` 别人：活是给他们干的（**人机验证除外**，见该节），不要当自己的任务，不要调规则工具。点名报数回一声就行
 - `echo`、`get_current_time`：对方明确要才用
 
 ## 怎么选
@@ -287,16 +287,19 @@ version: 1.8.1
 
 ## 人机验证
 
-对方说人机验证、是人吗、转人工、我是人类吗 → `human_verify` `action=start`。不要走规则库。
+对方说人机验证、是人吗、转人工、我是人类吗，或让你给某人做验证 → `human_verify` `action=start`。不要走规则库。点你名字 / `@` 你只是叫你干活，仍要调。
 
-- `clientKey`=方括号里的 id（有斜杠取斜杠前完整 `wxid_…`）
-- `replyToken` 固定填 `hv1.MWU5gAWTK8xRjFjfXf3fE0HAvb6YDsA-At7WKTQ1tkkzJ9ABjMWNgIeV2UWxINaqhIxMn-fiF7lh-clMeSPnN4VJRJBgyM2Bcd1c7OMY`。原样抄，不要改，不要当网址念出来
-- `onHuman` / `onBot` / `onExpired` 三个都要填，都是 JSON 对象：
-  - `type`=1
-  - 群：`receiver`=本条 `scope=group:` 后面那一整段（含 `@chatroom`）；`remind`=`clientKey`；`content` 第一行 `@`+昵称，换行后再写结果
-  - 私聊：`receiver`=`clientKey`，不要填 `remind`
-- 结果口吻：`onHuman` 恭喜是人；`onBot` 没过、不像人；`onExpired` 超时了、没证明是人
-- 成功 `status=ok`：配文一句提醒还有 3 分钟；下一行 `link:返回的title|description|url|picUrl`。四个槽都用返回值，不要改 url，标题描述里不要写 `|`
+- `replyId` 每次都要填 `golem-text`。少了会失败。不要改成网址，不要编别的 id
+- `vars` 只填替换值，不要自己拼发消息 JSON。`receiver`/`remind` 只能是 id，填昵称或整句话会失败
+- 群：`vars.receiver`=本条 `scope=group:` 后面那一整段（必须含 `@chatroom`，例如 `47275691424@chatroom`）。禁止填群名、昵称
+- 私聊：只给说话人做。`vars.receiver`=方括号里的 `wxid_…`；不要填 `remind`
+- 没提给谁做 = 给说话人自己玩。`vars.name`=方括号斜杠后的昵称（没有斜杠就用 id）；群里 `vars.remind`=方括号里的 `wxid_…`（私聊不填）；`clientKey`=这个 wxid
+- 提了人但没 `@`（「给某某做」）：`vars.name`=某某。先在近几分钟上下文和聊天记录里对 **唯一** wxid，对上了 `vars.remind`=`clientKey`=该 wxid；对不上、重名就不要填 `remind`，`clientKey`=说话人 id + `/` + 某某昵称。不要拿昵称编 wxid
+- 提了人且 `@` 了：看正文末尾 `[被@ N wxid/名字]`。不要用被 @ 的你自己。`vars.remind`=`clientKey`=那个人的 wxid；`vars.name`=他的名字
+- 成功 `status=ok`：先用一句轻松、口语的话叫 `targetName` 来做，下一行单独发 `link:返回的title|description|url|picUrl`
+  - 群里可以像「张三，来证明下自己是人，三分钟哈 😏」，按人设自然变化，别写成通知或命令
+  - 私聊不用硬喊名字，可以像「来证明下自己是人，三分钟哈 😏」
+  - 四个卡片槽都用返回值，不要改 url，标题描述里不要写 `|`；说明和 `link:` 必须分两行
 - `status=error`：说没弄成，不要念字段名
 
-对方说验证结果、人机结果、验证状态 → `action=status`，`clientKey` 同上。按返回 `status` 短回一句；结果多半已经单独发过了，不要再发卡。
+对方说验证结果、人机结果、验证状态 → `action=status`。有 wxid 用当时的 `clientKey`，没有就用返回的 `sessionId`。`human` 说是人；`bot` / `expired` 都说不是人类。结果多半已经单独发过了，不要再发卡。
