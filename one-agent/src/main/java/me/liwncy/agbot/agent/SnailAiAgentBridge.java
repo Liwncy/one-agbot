@@ -165,12 +165,13 @@ public class SnailAiAgentBridge implements AgentBridge {
                     content,
                     imageIds
             );
-            if (AgentUserReply.isErrorish(raw)) {
-                answer = errorLine(msgInfo, AgentUserReply.fromAnswer(raw));
+            String sanitized = AgentOutboundText.sanitize(raw);
+            if (AgentUserReply.isErrorish(sanitized)) {
+                answer = errorLine(msgInfo, AgentUserReply.fromAnswer(sanitized));
                 log.warn("Agent raw answer sanitized openId={} conversationId={} raw={}",
                         openId, conversationId, preview(raw));
             } else {
-                answer = raw;
+                answer = sanitized;
             }
         } catch (Exception e) {
             answer = errorLine(msgInfo, AgentUserReply.fromThrowable(e));
@@ -210,6 +211,7 @@ public class SnailAiAgentBridge implements AgentBridge {
                     flusher::append
             );
             flusher.finish();
+            full = AgentOutboundText.sanitize(full);
         } catch (Exception e) {
             String friendly = errorLine(msgInfo, AgentUserReply.fromThrowable(e));
             log.warn("Agent stream failed openId={} conversationId={} sent={} reply={} root={}",

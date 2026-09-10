@@ -167,7 +167,11 @@ final class StreamReplyFlusher {
     }
 
     private void emit(String part) {
-        List<String> pieces = splitKeepMedia(part);
+        String sanitized = AgentOutboundText.sanitize(part);
+        if (sanitized.isBlank()) {
+            return;
+        }
+        List<String> pieces = splitKeepMedia(sanitized);
         for (String piece : pieces) {
             if (piece != null && !piece.isBlank()) {
                 emitter.accept(piece);

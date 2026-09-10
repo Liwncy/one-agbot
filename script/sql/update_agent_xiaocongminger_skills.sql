@@ -3,7 +3,7 @@
 START TRANSACTION;
 
 INSERT INTO sai_skill (name, description, skill_content, version, has_files, create_dt, update_dt)
-SELECT 'MCP 工具用法', '小聪明儿要动手办事时用：联网搜索实时资料或给闲聊找新鲜信息、查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查免费AI接口、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、修仙剧情探索或普通修仙玩法、玄学八字、人机验证是人吗转人工，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。', '
+SELECT 'MCP 工具用法', '小聪明儿要动手办事时用：联网搜索实时资料或给闲聊找新鲜信息、查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查免费AI接口、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、普通修仙或修仙速探、玄学八字、人机验证是人吗转人工，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。修仙剧情探索、继续探索及剧情选项短回复改读独立的「修仙剧情探索」技能。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。', '
 # MCP 工具用法
 
 系统提示词只做人设。这里只写「何时调、怎么填」，不写怎么发出去。
@@ -259,31 +259,10 @@ SELECT 'MCP 工具用法', '小聪明儿要动手办事时用：联网搜索实�
 - 对方要画自己 / 看自己长啥样：`text`=`修仙描绘`，返回描写原样给用户或当 `draw_image` 的 prompt，不要润色、不要补灵石等级
 - 只要目录可 `listHelp=true`
 
-进入修仙世界、探索、继续探索，或正在回复剧情选项 → `xiuxian_adventure`，不要用
-`xiuxian_action` 的速探代替：
-
-- 身份三项仍按上面填写。每次调用都要传 `requestId`；改变剧情状态时生成新值，
-  `status` 也用独立值，只有同一次工具调用重试才复用原值。工具返回的 `version`
-  必须原样用于紧接着的下一次调用
-- 对方开始新的剧情探索：你先自由生成一个修仙场景和 2～4 个简短、差异明确的
-  选项，再调 `action=start` 提交 `scene`、`options`。只把工具确认返回的公开场景和
-  编号选项发出去，不补充选项后果，不暗示哪项更赚
-- 每段剧情由服务端决定 1～3 步。对方回复编号或明确的选项文字时，先调
-  `action=status` 恢复当前公开状态和最新 `version`，确认匹配后调 `action=choose`；
-  不能把模糊闲聊猜成选项
-- `choose` 返回 `phase=awaiting_scene`：根据 `chosen.outcome.cue` 写出本次选择造成的
-  后果，并自然接出下一幕和 2～4 个新选项；再调 `action=continue` 保存。发给对方时
-  要有后果、下一幕、编号选项，但不要念内部字段
-- `choose` 返回 `phase=awaiting_exclusive` / `needsExclusiveItem=true`：说明玩家已经
-  碰中独珍。根据本段剧情生成装备 `name`、`slot`、`flavorText`，调
-  `action=finalize`。你只能编名称、部位、来历描述；品质、攻击、防御、气血、
-  闪避、暴击、评分、等级、套装全部禁止编造或传入
-- `choose` 或 `finalize` 返回 `status=completed`：结合已选后果讲完结局，准确转述
-  `reward` 里的实际到账结果，然后问「还要继续探索吗」。没有到账的物品不要说拿到了
-- 未选选项的后果和奖励属于隐藏结果：不要追问工具、不要推测、不要比较，也不要向
-  对方泄露 `version`、`requestId`、内部 JSON、奖励档位代码或用户 id
-- 冷却、过期、状态冲突按工具返回自然说明。状态冲突先重新 `status`，不要凭聊天记忆
-  重复结算
+进入修仙世界、修仙探索、继续探索，或上一条助手消息带 `【修仙探索 x/y】` 后用户
+回复编号、中文序号、选项文字、问号或追问 → 改读独立的「修仙剧情探索」技能，
+严格按其中的状态恢复、原样发送和结算规则使用 `xiuxian_adventure`。不要在本节
+自行续写剧情，也不要用 `xiuxian_action` 的速探代替。
 
 玄学（八字、星座、运势）→ `xuanxue_query`：
 
@@ -335,7 +314,7 @@ FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM sai_skill WHERE name = 'MCP 工具用法');
 
 UPDATE sai_skill
-SET description = '小聪明儿要动手办事时用：联网搜索实时资料或给闲聊找新鲜信息、查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查免费AI接口、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、修仙剧情探索或普通修仙玩法、玄学八字、人机验证是人吗转人工，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。',
+SET description = '小聪明儿要动手办事时用：联网搜索实时资料或给闲聊找新鲜信息、查群里聊天记录（刚才谁说的、翻记录、那天聊了啥）、画图生成图、要表情包梗图、做视频或识图、查天气或车票、查免费AI接口、查热搜热榜、聊天找话题（无聊、聊点啥）、诗词飞花令、庄园种地浇水、普通修仙或修仙速探、玄学八字、人机验证是人吗转人工，或者对方想让她干点没明说、但感觉应该有这个功能的事（查个链接、截个网页图、问今日老婆、各种口令和小能力）。修仙剧情探索、继续探索及剧情选项短回复改读独立的「修仙剧情探索」技能。规则库能搜到主人配过的各种接口，别只认你见过的那几个。拿不准该用哪个工具也看这里。要办上面任何一件事，先把本技能正文读一遍再动手，不要凭印象直接调工具。',
     skill_content = '
 # MCP 工具用法
 
@@ -592,31 +571,10 @@ SET description = '小聪明儿要动手办事时用：联网搜索实时资料�
 - 对方要画自己 / 看自己长啥样：`text`=`修仙描绘`，返回描写原样给用户或当 `draw_image` 的 prompt，不要润色、不要补灵石等级
 - 只要目录可 `listHelp=true`
 
-进入修仙世界、探索、继续探索，或正在回复剧情选项 → `xiuxian_adventure`，不要用
-`xiuxian_action` 的速探代替：
-
-- 身份三项仍按上面填写。每次调用都要传 `requestId`；改变剧情状态时生成新值，
-  `status` 也用独立值，只有同一次工具调用重试才复用原值。工具返回的 `version`
-  必须原样用于紧接着的下一次调用
-- 对方开始新的剧情探索：你先自由生成一个修仙场景和 2～4 个简短、差异明确的
-  选项，再调 `action=start` 提交 `scene`、`options`。只把工具确认返回的公开场景和
-  编号选项发出去，不补充选项后果，不暗示哪项更赚
-- 每段剧情由服务端决定 1～3 步。对方回复编号或明确的选项文字时，先调
-  `action=status` 恢复当前公开状态和最新 `version`，确认匹配后调 `action=choose`；
-  不能把模糊闲聊猜成选项
-- `choose` 返回 `phase=awaiting_scene`：根据 `chosen.outcome.cue` 写出本次选择造成的
-  后果，并自然接出下一幕和 2～4 个新选项；再调 `action=continue` 保存。发给对方时
-  要有后果、下一幕、编号选项，但不要念内部字段
-- `choose` 返回 `phase=awaiting_exclusive` / `needsExclusiveItem=true`：说明玩家已经
-  碰中独珍。根据本段剧情生成装备 `name`、`slot`、`flavorText`，调
-  `action=finalize`。你只能编名称、部位、来历描述；品质、攻击、防御、气血、
-  闪避、暴击、评分、等级、套装全部禁止编造或传入
-- `choose` 或 `finalize` 返回 `status=completed`：结合已选后果讲完结局，准确转述
-  `reward` 里的实际到账结果，然后问「还要继续探索吗」。没有到账的物品不要说拿到了
-- 未选选项的后果和奖励属于隐藏结果：不要追问工具、不要推测、不要比较，也不要向
-  对方泄露 `version`、`requestId`、内部 JSON、奖励档位代码或用户 id
-- 冷却、过期、状态冲突按工具返回自然说明。状态冲突先重新 `status`，不要凭聊天记忆
-  重复结算
+进入修仙世界、修仙探索、继续探索，或上一条助手消息带 `【修仙探索 x/y】` 后用户
+回复编号、中文序号、选项文字、问号或追问 → 改读独立的「修仙剧情探索」技能，
+严格按其中的状态恢复、原样发送和结算规则使用 `xiuxian_adventure`。不要在本节
+自行续写剧情，也不要用 `xiuxian_action` 的速探代替。
 
 玄学（八字、星座、运势）→ `xuanxue_query`：
 
@@ -672,6 +630,167 @@ INSERT INTO sai_agent_skill (agent_id, skill_id)
 SELECT 1, s.id
 FROM sai_skill AS s
 WHERE s.name = 'MCP 工具用法'
+  AND NOT EXISTS (
+    SELECT 1 FROM sai_agent_skill AS a
+    WHERE a.agent_id = 1 AND a.skill_id = s.id
+  );
+
+INSERT INTO sai_skill (name, description, skill_content, version, has_files, create_dt, update_dt)
+SELECT '修仙剧情探索', '进入修仙世界、修仙探索、继续探索时使用；上一条助手消息带【修仙探索 x/y】时，用户只回复 1/2/3/4、中文序号（一二三四或第一项等）、明确选项文字、问号或追问也必须使用本技能。短数字回复优先命中本技能并恢复修仙剧情，不要当普通闲聊。', '
+# 修仙剧情探索
+
+本技能只负责 `xiuxian_adventure` 的分步剧情。普通修仙操作和明确的「修仙速探 /
+快速探索 / 原来的探索」仍走 `xiuxian_action`，不得互相替代。
+
+## 识别当前消息
+
+用户正文可能带 `[userId/昵称 scope=…]` 前缀和近期上下文。身份取本条消息方括号
+中的完整 id 与昵称；意图只取 `[本条]` 后的原话。上一条助手消息出现
+`【修仙探索 x/y】` 时，即使本条只有 `1`、`二`、`第四个`、选项原文、`？`、
+「这个会怎样」等短回复，也必须回到本技能。
+
+- 有效选择：当前公开选项范围内的阿拉伯数字、中文序号，或能唯一对应当前选项的
+  明确文字。
+- 非选择：`?` / `？`、问句、追问、评价、闲聊、玩法讨论、询问命令，以及不能唯一
+  对应选项的文字。不得猜选项。
+
+## 固定调用参数
+
+每次调用都带 `platform=agbot`、完整 `userId`、`userName` 和 `requestId`。
+每个新动作生成新的 `requestId`；只有同一次调用重试才复用。工具返回的 `version`
+原样用于紧接着的下一次状态动作，不得猜测或沿用旧版本。
+
+## 每轮流程
+
+1. 每轮先调用 `action=status` 恢复服务端状态，再决定是否改变状态。不得只凭聊天
+   记忆选择、续写或结算。
+2. 用户在讨论玩法、询问命令时，只解释，不执行 `start`、`choose`、`continue` 或
+   `finalize` 等任何改变状态的动作。
+3. 当前有未完成探索时：
+   - 只有有效编号或明确选项文字才调用 `action=choose`。
+   - 问号、普通问题、追问、模糊文字都不得 `choose`；本轮只把 `status` 返回的
+     `replyText` 原样重发，不回答隐藏后果，不替用户做决定。
+4. 当前没有未完成探索时，只有用户明确说进入修仙世界、开始/继续修仙探索，才
+   `action=start`。先生成全中文场景和 2～4 个简短、差异明确的中文选项，提交
+   `scene` 与 `options`。用户只是在问玩法或命令时不得开始。
+5. `choose` 若尚未结束并返回 `phase=awaiting_scene`，只根据
+   `chosen.outcome.cue` 生成全中文的「本次选择后果 + 下一幕 + 2～4 个编号选项」，
+   再调用 `action=continue` 保存。不得夹带英文叙事，不得泄露 cue、version、
+   requestId、内部 JSON、奖励档位或用户 id。
+6. 如果本轮 `status` 已是 `phase=awaiting_scene`，说明上次在 `choose` 后中断；
+   同样根据 `status.chosen.outcome.cue` 生成下一步并调用 `continue`，不得另做一次
+   `choose`。若是 `phase=awaiting_exclusive`，直接按下文规则调用 `finalize`。
+
+## 对外回复
+
+- `start`、`continue`、`status` 以及任何 `status=completed` 结果的 `replyText`
+  是唯一可信的公开文案。凡本轮需要发送这些结果时，必须逐字原样发送，保留标题、
+  换行和全部编号选项；不得改写、删减、补充，也不得另加「选哪个」。
+- 问号、追问或无效选择只原样重发本轮 `status.replyText`。
+- 未拿到 `status=completed` 前，禁止写「探索结算」，禁止声称获得任何物品、
+  属性、灵石、修为或奖励。
+- 拿到 `status=completed` 后只发送该次工具真实 `replyText`，不得复述、总结、
+  润色或添加引导。`replyText` 已包含一次「还要继续探索吗」，不得再问第二遍；
+  之后必须等用户明确说继续探索才重新 `start`，不得引导「速探」。
+- 冷却、过期、冲突和失败也只依据工具公开 `replyText` 处理；冲突先重新
+  `status`，不得重复选择或结算。
+
+## 独珍 finalize
+
+`choose` 返回 `phase=awaiting_exclusive` 或 `needsExclusiveItem=true` 时，根据
+本段中文剧情生成独珍，并调用 `action=finalize`。AI 只允许提交：
+
+- `name`：中文名称
+- `slot`：工具允许的装备部位
+- `flavorText`：全中文来历描述
+
+禁止提交或编造品质、攻击、防御、气血、闪避、暴击、评分、等级、套装、奖励数量
+及任何其他字段。`finalize` 完成后只原样发送其 `completed.replyText`。
+', 0, 0, NOW(), NOW()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM sai_skill WHERE name = '修仙剧情探索');
+
+UPDATE sai_skill
+SET description = '进入修仙世界、修仙探索、继续探索时使用；上一条助手消息带【修仙探索 x/y】时，用户只回复 1/2/3/4、中文序号（一二三四或第一项等）、明确选项文字、问号或追问也必须使用本技能。短数字回复优先命中本技能并恢复修仙剧情，不要当普通闲聊。',
+    skill_content = '
+# 修仙剧情探索
+
+本技能只负责 `xiuxian_adventure` 的分步剧情。普通修仙操作和明确的「修仙速探 /
+快速探索 / 原来的探索」仍走 `xiuxian_action`，不得互相替代。
+
+## 识别当前消息
+
+用户正文可能带 `[userId/昵称 scope=…]` 前缀和近期上下文。身份取本条消息方括号
+中的完整 id 与昵称；意图只取 `[本条]` 后的原话。上一条助手消息出现
+`【修仙探索 x/y】` 时，即使本条只有 `1`、`二`、`第四个`、选项原文、`？`、
+「这个会怎样」等短回复，也必须回到本技能。
+
+- 有效选择：当前公开选项范围内的阿拉伯数字、中文序号，或能唯一对应当前选项的
+  明确文字。
+- 非选择：`?` / `？`、问句、追问、评价、闲聊、玩法讨论、询问命令，以及不能唯一
+  对应选项的文字。不得猜选项。
+
+## 固定调用参数
+
+每次调用都带 `platform=agbot`、完整 `userId`、`userName` 和 `requestId`。
+每个新动作生成新的 `requestId`；只有同一次调用重试才复用。工具返回的 `version`
+原样用于紧接着的下一次状态动作，不得猜测或沿用旧版本。
+
+## 每轮流程
+
+1. 每轮先调用 `action=status` 恢复服务端状态，再决定是否改变状态。不得只凭聊天
+   记忆选择、续写或结算。
+2. 用户在讨论玩法、询问命令时，只解释，不执行 `start`、`choose`、`continue` 或
+   `finalize` 等任何改变状态的动作。
+3. 当前有未完成探索时：
+   - 只有有效编号或明确选项文字才调用 `action=choose`。
+   - 问号、普通问题、追问、模糊文字都不得 `choose`；本轮只把 `status` 返回的
+     `replyText` 原样重发，不回答隐藏后果，不替用户做决定。
+4. 当前没有未完成探索时，只有用户明确说进入修仙世界、开始/继续修仙探索，才
+   `action=start`。先生成全中文场景和 2～4 个简短、差异明确的中文选项，提交
+   `scene` 与 `options`。用户只是在问玩法或命令时不得开始。
+5. `choose` 若尚未结束并返回 `phase=awaiting_scene`，只根据
+   `chosen.outcome.cue` 生成全中文的「本次选择后果 + 下一幕 + 2～4 个编号选项」，
+   再调用 `action=continue` 保存。不得夹带英文叙事，不得泄露 cue、version、
+   requestId、内部 JSON、奖励档位或用户 id。
+6. 如果本轮 `status` 已是 `phase=awaiting_scene`，说明上次在 `choose` 后中断；
+   同样根据 `status.chosen.outcome.cue` 生成下一步并调用 `continue`，不得另做一次
+   `choose`。若是 `phase=awaiting_exclusive`，直接按下文规则调用 `finalize`。
+
+## 对外回复
+
+- `start`、`continue`、`status` 以及任何 `status=completed` 结果的 `replyText`
+  是唯一可信的公开文案。凡本轮需要发送这些结果时，必须逐字原样发送，保留标题、
+  换行和全部编号选项；不得改写、删减、补充，也不得另加「选哪个」。
+- 问号、追问或无效选择只原样重发本轮 `status.replyText`。
+- 未拿到 `status=completed` 前，禁止写「探索结算」，禁止声称获得任何物品、
+  属性、灵石、修为或奖励。
+- 拿到 `status=completed` 后只发送该次工具真实 `replyText`，不得复述、总结、
+  润色或添加引导。`replyText` 已包含一次「还要继续探索吗」，不得再问第二遍；
+  之后必须等用户明确说继续探索才重新 `start`，不得引导「速探」。
+- 冷却、过期、冲突和失败也只依据工具公开 `replyText` 处理；冲突先重新
+  `status`，不得重复选择或结算。
+
+## 独珍 finalize
+
+`choose` 返回 `phase=awaiting_exclusive` 或 `needsExclusiveItem=true` 时，根据
+本段中文剧情生成独珍，并调用 `action=finalize`。AI 只允许提交：
+
+- `name`：中文名称
+- `slot`：工具允许的装备部位
+- `flavorText`：全中文来历描述
+
+禁止提交或编造品质、攻击、防御、气血、闪避、暴击、评分、等级、套装、奖励数量
+及任何其他字段。`finalize` 完成后只原样发送其 `completed.replyText`。
+',
+    version = COALESCE(version, 0) + 1,
+    update_dt = NOW()
+WHERE name = '修仙剧情探索';
+
+INSERT INTO sai_agent_skill (agent_id, skill_id)
+SELECT 1, s.id
+FROM sai_skill AS s
+WHERE s.name = '修仙剧情探索'
   AND NOT EXISTS (
     SELECT 1 FROM sai_agent_skill AS a
     WHERE a.agent_id = 1 AND a.skill_id = s.id
@@ -963,5 +1082,5 @@ SELECT s.id, s.name, s.version, s.update_dt
 FROM sai_skill AS s
 JOIN sai_agent_skill AS a ON a.skill_id = s.id
 WHERE a.agent_id = 1
-  AND s.name IN ('MCP 工具用法', '怎么回消息', '微信专属玩法')
+  AND s.name IN ('MCP 工具用法', '修仙剧情探索', '怎么回消息', '微信专属玩法')
 ORDER BY s.id;

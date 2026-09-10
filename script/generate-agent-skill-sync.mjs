@@ -6,6 +6,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentId = 1;
 const skillPaths = [
   "skills/mcp-tools/SKILL.md",
+  "skills/xiuxian-adventure/SKILL.md",
   "skills/outbound-reply/SKILL.md",
   "skills/wechat-play/SKILL.md",
 ];
